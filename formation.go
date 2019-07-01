@@ -18,9 +18,10 @@ import (
 	"time"
 
 	"github.com/cloud66-oss/cloud66"
-	notifiers "github.com/cloud66-oss/trackman/notifiers"
+	"github.com/cloud66-oss/trackman/notifiers"
 	trackmanType "github.com/cloud66-oss/trackman/utils"
 	"github.com/cloud66/cli"
+	"github.com/fsnotify/fsnotify"
 	"github.com/sirupsen/logrus"
 )
 
@@ -229,12 +230,20 @@ $ cx formations stencils list --formation bar
 							Usage: "Stencil filename. This can be a full file path but the file name should be identical to the one available as part of the Formation",
 						},
 						cli.StringFlag{
+							Name:  "stencil-folder",
+							Usage: "Render all files within the folder. Cannot be used with stencil-file at the same time",
+						},
+						cli.StringFlag{
 							Name:  "snapshot",
 							Usage: "Snapshot ID. Default uses the latest snapshot",
 						},
 						cli.StringFlag{
 							Name:  "output",
 							Usage: "Full file name and path to save the rendered stencil. If missing it will output to stdout",
+						},
+						cli.BoolFlag{
+							Name:  "watch",
+							Usage: "Watches the file or the folder for changes and renders every time there is a new change",
 						},
 					},
 				},
@@ -780,11 +789,106 @@ func runRenderStencil(c *cli.Context) {
 		printFatal("No formation provided. Please use --formation to specify a formation")
 	}
 
+	stencilFolder := c.String("stencil-folder")
 	stencilFilename := c.String("stencil-file")
-	if stencilFilename == "" {
-		printFatal("No stencil name provided. Please use --stencil-file to specify a stencil file")
+	if stencilFilename == "" && stencilFolder == "" {
+		printFatal("No stencil file or folder provided. Please use --stencil-file or --stencil-folder to specify a stencil file or folder")
+	}
+	if stencilFolder != "" && stencilFilename != "" {
+		printFatal("Both --stencil-file and --stencil-folder provided. Please use only one")
 	}
 
+	output := c.String("output")
+	snapshotID := c.String("snapshot")
+	stdout := (output == "")
+	watch := c.Bool("watch")
+
+	if watch && stdout {
+		printFatal("Cannot use --watch without --output")
+	}
+
+	filesToRender := make([]string, 0)
+	if stencilFolder != "" {
+		fileList, err := ioutil.ReadDir(stencilFolder)
+		if err != nil {
+			printFatal("Failed to fetch all files from folder %s: %s", stencilFolder, err.Error())
+		}
+		for _, file := range fileList {
+			filesToRender = append(filesToRender, filepath.Join(stencilFolder, file.Name()))
+		}
+	} else {
+		filesToRender = append(filesToRender, stencilFilename)
+	}
+
+	var outdir string
+	// if output is defined, then make sure we have a folder for it
+	if !stdout {
+		if stencilFolder != "" {
+			outdir = output
+		} else {
+			outdir = filepath.Dir(output)
+		}
+
+		os.MkdirAll(outdir, os.ModePerm)
+	}
+
+	for _, stencil := range filesToRender {
+		file := filepath.Base(stencil)
+		if stencilFolder != "" {
+			output = filepath.Join(outdir, file)
+		}
+
+		if !stdout {
+			fmt.Printf("Rendering %s to %s\n", file, output)
+		}
+		// output filename is sequenced if provided. otherwise, it's concatenated
+		renderStencil(stencil, formationName, stack, output, snapshotID)
+	}
+
+	if watch {
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			printFatal("Failed to setup a file watcher: %s", err.Error())
+		}
+		defer watcher.Close()
+
+		done := make(chan bool)
+
+		fmt.Println("Watching for changes...")
+
+		go func() {
+			for {
+				select {
+				case event, ok := <-watcher.Events:
+					if !ok {
+						return
+					}
+					if event.Op&fsnotify.Write == fsnotify.Write {
+						changedFile := filepath.Base(event.Name)
+						output := filepath.Join(outdir, changedFile)
+						fmt.Printf("Rendering %s to %s\n", changedFile, output)
+						renderStencil(event.Name, formationName, stack, output, snapshotID)
+					}
+				case err, ok := <-watcher.Errors:
+					if !ok {
+						return
+					}
+					printFatal("Error during file change event: %s", err.Error())
+				}
+			}
+		}()
+
+		for _, file := range filesToRender {
+			err = watcher.Add(file)
+			if err != nil {
+				printFatal("Failed to add a watch for %s: %s", file, err.Error())
+			}
+		}
+		<-done
+	}
+}
+
+func renderStencil(stencilFilename string, formationName string, stack *cloud66.Stack, output string, snapshotID string) {
 	if does, _ := fileExists(stencilFilename); !does {
 		printFatal("Cannot find %s", stencilFilename)
 	}
@@ -792,7 +896,6 @@ func runRenderStencil(c *cli.Context) {
 	stencilName := filepath.Base(stencilFilename)
 
 	// find the snapshot
-	snapshotID := c.String("snapshot")
 	var snapshotUID string
 	if snapshotID == "" || snapshotID == "latest" {
 		snapshots, err := client.Snapshots(stack.Uid)
@@ -811,8 +914,6 @@ func runRenderStencil(c *cli.Context) {
 	var err error
 	formations, err = client.Formations(stack.Uid, false)
 	must(err)
-
-	output := c.String("output")
 
 	stencilUID := ""
 	formationUID := ""
@@ -847,12 +948,6 @@ func runRenderStencil(c *cli.Context) {
 	renders, err = client.RenderStencil(stack.Uid, snapshotUID, formationUID, stencilUID, body)
 	must(err)
 
-	outdir := filepath.Dir(output)
-
-	if output != "" {
-		os.MkdirAll(outdir, os.ModePerm)
-	}
-
 	foundErrors := renders.Errors()
 	if len(foundErrors) != 0 {
 		fmt.Fprintln(os.Stderr, "Error during rendering of stencils:")
@@ -883,7 +978,7 @@ func runRenderStencil(c *cli.Context) {
 			}
 		} else {
 			// concatenate
-			fmt.Print(v.Content)
+			fmt.Printf("%s---\n", v.Content)
 		}
 	}
 }
