@@ -11,11 +11,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:33d5ed9a0a16c0f3a4458b2f52318319825529d9703b89e1e89c0e5e98a4b859"
+  digest = "1:c802c5479676ba151e8797d3f04ef39f0d5095270f11233c7b19e4cc70fbbc1b"
   name = "github.com/cloud66-oss/cloud66"
   packages = ["."]
   pruneopts = "UT"
-  revision = "468b8f87ac4604f438f3010941a92b6f92006158"
+  revision = "28644de2366f732ce68a74d96634ab653d82953f"
 
 [[projects]]
   branch = "master"
@@ -53,6 +53,14 @@
   packages = ["."]
   pruneopts = "UT"
   revision = "19624b7fbd8037566e8298754bc5d2c917cc1fa3"
+
+[[projects]]
+  digest = "1:abeb38ade3f32a92943e5be54f55ed6d6e3b6602761d74b4aab4c9dd45c18abd"
+  name = "github.com/fsnotify/fsnotify"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "c2828203cd70a50dcccfb2761f8b1f8ceef9a8e9"
+  version = "v1.4.7"
 
 [[projects]]
   digest = "1:e3bb035dd2ee60debfd83a746867a2b632165fb284620a56384250e882b3f4af"
@@ -259,6 +267,7 @@
     "github.com/cloud66-oss/trackman/utils",
     "github.com/cloud66/cli",
     "github.com/cloud66/wray",
+    "github.com/fsnotify/fsnotify",
     "github.com/getsentry/raven-go",
     "github.com/h2non/gock",
     "github.com/inconshreveable/go-update",

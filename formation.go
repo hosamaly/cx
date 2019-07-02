@@ -22,6 +22,7 @@ import (
 	trackmanType "github.com/cloud66-oss/trackman/utils"
 	"github.com/cloud66/cli"
 	"github.com/fsnotify/fsnotify"
+	"github.com/mgutz/ansi"
 	"github.com/sirupsen/logrus"
 )
 
@@ -87,6 +88,29 @@ $ cx formations list -s mystack foo bar // only show formations foo and bar
 				cli.BoolFlag{
 					Name:  "overwrite",
 					Usage: "Overwrite existing files in outdir if present. Default is false and asks for overwrite permissions per file",
+				},
+			},
+		},
+		{
+			Name:   "commit",
+			Action: runCommitFormation,
+			Usage:  "Commit all given stencils for a formation back",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "formation,f",
+					Usage: "the formation name",
+				},
+				cli.StringFlag{
+					Name:  "dir",
+					Usage: "Directory holding the formation stencils. Cannot be used alongside --stencil",
+				},
+				cli.StringFlag{
+					Name:  "stencil",
+					Usage: "A single stencil file to commit. Cannot be used alongside --dir",
+				},
+				cli.StringFlag{
+					Name:  "message",
+					Usage: "Commit message",
 				},
 			},
 		},
@@ -343,6 +367,83 @@ func runCreateFormation(c *cli.Context) {
 	}
 
 	fmt.Println("Formation created")
+}
+
+func runCommitFormation(c *cli.Context) {
+	stack := mustStack(c)
+
+	formationName := c.String("formation")
+	if formationName == "" {
+		printFatal("No formation provided. Please use --formation to specify a formation")
+	}
+
+	var formation *cloud66.Formation
+	formations, err := client.Formations(stack.Uid, true)
+	must(err)
+	for _, innerFormation := range formations {
+		if innerFormation.Name == formationName {
+			formation = &innerFormation
+			break
+		}
+	}
+	if formation == nil {
+		printFatal("Formation with name \"%v\" could not be found", formationName)
+	}
+
+	dir := c.String("dir")
+	stencilOption := c.String("stencil")
+	if dir == "" && stencilOption == "" {
+		printFatal("Either --dir or --stencil should be provided")
+	}
+
+	if dir != "" && stencilOption != "" {
+		printFatal("Cannot use both --dir and --stencil at the same time")
+	}
+
+	message := c.String("message")
+	if message == "" {
+		printFatal("No message provided")
+	}
+
+	filesToSave := make([]string, 0)
+	if dir != "" {
+		fileList, err := ioutil.ReadDir(dir)
+		if err != nil {
+			printFatal("Cannot fetch file list in %s: %s", dir, err.Error())
+		}
+		for _, file := range fileList {
+			filesToSave = append(filesToSave, filepath.Join(dir, file.Name()))
+		}
+	} else {
+		filesToSave = append(filesToSave, stencilOption)
+	}
+
+	for _, file := range filesToSave {
+		if does, _ := fileExists(file); !does {
+			printFatal("Cannot find %s to save", file)
+		}
+	}
+
+	for _, stencilFile := range filesToSave {
+		stencilName := filepath.Base(stencilFile)
+		stencil := formation.FindStencil(stencilName)
+		if stencil == nil {
+			printFatal("No stencil named %s found on the formation", stencilName)
+		}
+
+		body, err := ioutil.ReadFile(stencilFile)
+		if err != nil {
+			printFatal("Failed to read %s: %s", stencilName, err.Error())
+		}
+		_, err = client.UpdateStencil(stack.Uid, formation.Uid, stencil.Uid, message, body)
+		if err != nil {
+			printFatal("Failed to commit %s: %s", stencilFile, err.Error())
+		}
+
+		fmt.Printf("Saved %s\n", stencilName)
+	}
+
+	fmt.Println("Done")
 }
 
 func runFetchFormation(c *cli.Context) {
@@ -950,9 +1051,9 @@ func renderStencil(stencilFilename string, formationName string, stack *cloud66.
 
 	foundErrors := renders.Errors()
 	if len(foundErrors) != 0 {
-		fmt.Fprintln(os.Stderr, "Error during rendering of stencils:")
+		fmt.Fprintln(os.Stderr, ansi.Color("Error during rendering of stencils:", "red+h"))
 		for _, renderError := range foundErrors {
-			fmt.Fprintf(os.Stderr, "%s in %s\n", renderError.Text, renderError.Stencil)
+			fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("\t%s in %s\n", renderError.Text, renderError.Stencil), "red+h"))
 		}
 
 		return
@@ -960,9 +1061,9 @@ func renderStencil(stencilFilename string, formationName string, stack *cloud66.
 
 	foundWarnings := renders.Warnings()
 	if len(foundWarnings) != 0 {
-		fmt.Fprintln(os.Stderr, "Warning during rendering of stencils:")
+		fmt.Fprintln(os.Stderr, ansi.Color("Warning during rendering of stencils:", "yellow"))
 		for _, renderError := range foundWarnings {
-			fmt.Fprintf(os.Stderr, "%s in %s\n", renderError.Text, renderError.Stencil)
+			fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("\t%s in %s\n", renderError.Text, renderError.Stencil), "yellow"))
 		}
 
 		return
