@@ -770,7 +770,7 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 	//add helm releases
 	fmt.Println("Saving helm releases...")
 	for _, release := range formation.HelmReleases {
-		fileName := filepath.Join(releasesDir, release.ChartName+"-values.yml")
+		fileName := filepath.Join(releasesDir, release.DisplayName+"-values.yml")
 		file, err := os.Create(fileName)
 		defer file.Close()
 		if err != nil {
