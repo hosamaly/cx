@@ -29,17 +29,6 @@ const (
 	configstoreDirectoryName = "configstore"
 )
 
-type ConfigStoreRecords struct {
-	Records []*ConfigStoreRecord `json:"records" yaml:"records"`
-}
-
-type ConfigStoreRecord struct {
-	Key      string            `json:"key" yaml:"key"`
-	RawValue string            `json:"raw_value" yaml:"raw_value"`
-	Metadata map[string]string `json:"metadata" yaml:"metadata"`
-	Ttl      int               `json:"ttl" yaml:"ttl"`
-}
-
 var cmdFormations = &Command{
 	Name:       "formations",
 	Build:      buildFormations,
@@ -1160,8 +1149,8 @@ func handleConfigStoreEntries(fb *cloud66.FormationBundle, stack *cloud66.Stack,
 	return nil
 }
 
-func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bundlePath string) (*ConfigStoreRecords, error) {
-	configStoreRecordArray := make([]*ConfigStoreRecord, 0)
+func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bundlePath string) (*cloud66.ConfigStoreRecords, error) {
+	configStoreRecordArray := make([]*cloud66.ConfigStoreRecord, 0)
 	for _, fileName := range fb.ConfigStore {
 		configStoreRecords, err := parseConfigStoreEntriesFromFile(filepath.Join(bundlePath, configstoreDirectoryName, fileName))
 		if err != nil {
@@ -1171,17 +1160,17 @@ func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bun
 		configStoreRecordArray = append(configStoreRecordArray, configStoreRecords.Records...)
 	}
 
-	result := ConfigStoreRecords{Records: configStoreRecordArray}
+	result := cloud66.ConfigStoreRecords{Records: configStoreRecordArray}
 	return &result, nil
 }
 
-func parseConfigStoreEntriesFromFile(filePath string) (*ConfigStoreRecords, error) {
+func parseConfigStoreEntriesFromFile(filePath string) (*cloud66.ConfigStoreRecords, error) {
 	marshalledResult, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
 
-	var unmarshalledResult ConfigStoreRecords
+	var unmarshalledResult cloud66.ConfigStoreRecords
 	err = yaml.Unmarshal(marshalledResult, &unmarshalledResult)
 	if err != nil {
 		return nil, err
@@ -1190,7 +1179,7 @@ func parseConfigStoreEntriesFromFile(filePath string) (*ConfigStoreRecords, erro
 	return &unmarshalledResult, nil
 }
 
-func uploadConfigStoreEntries(configStoreRecords *ConfigStoreRecords, stack *cloud66.Stack, formation *cloud66.Formation) error {
+func uploadConfigStoreEntries(configStoreRecords *cloud66.ConfigStoreRecords, stack *cloud66.Stack, formation *cloud66.Formation) error {
 	return nil
 }
 
