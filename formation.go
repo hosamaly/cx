@@ -1121,7 +1121,7 @@ func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.
 		asyncResult, err := client.StackEnvVarNew(stack.Uid, key, value)
 		if err != nil {
 			if err.Error() == "Another environment variable with the same key exists. Use PUT to change it." {
-				fmt.Print("Failed to add the ", key, " environment variable because already present\n")
+				fmt.Printf("Failed to add the %s environment variable because it already exists\n", key)
 			} else {
 				return err
 			}
@@ -1184,7 +1184,11 @@ func uploadConfigStoreEntries(configStoreRecords *cloud66.BundledConfigStoreReco
 	for _, record := range configStoreRecords.Records {
 		_, err := client.CreateConfigStoreRecord(stack.ConfigStoreNamespace, &record.ConfigStoreRecord)
 		if err != nil {
-			return err
+			if strings.Contains(err.Error(), "Duplicate entry") {
+				fmt.Printf("Failed to add the %s ConfigStore record because it already exists\n", record.Key)
+			} else {
+				return err
+			}
 		}
 	}
 	return nil
