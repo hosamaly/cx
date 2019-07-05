@@ -91,7 +91,7 @@ func runCreateStack(c *cli.Context) {
 
 	stack, err = WaitStackBuild(stack.Uid, false)
 	must(err)
-	fmt.Println("Stack build completed successfully!")
+	fmt.Println("Done.")
 }
 
 func startCreateStack(name, environment, serviceYaml, manifestYaml string, targetOptions map[string]string) (*int, error) {
