@@ -22,7 +22,23 @@ import (
 	trackmanType "github.com/cloud66-oss/trackman/utils"
 	"github.com/cloud66/cli"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/go-yaml/yaml.v2"
 )
+
+const (
+	configstoreDirectoryName = "configstore"
+)
+
+type ConfigStoreRecords struct {
+	Records []*ConfigStoreRecord `json:"records" yaml:"records"`
+}
+
+type ConfigStoreRecord struct {
+	Key      string            `json:"key" yaml:"key"`
+	RawValue string            `json:"raw_value" yaml:"raw_value"`
+	Metadata map[string]string `json:"metadata" yaml:"metadata"`
+	Ttl      int               `json:"ttl" yaml:"ttl"`
+}
 
 var cmdFormations = &Command{
 	Name:       "formations",
@@ -459,6 +475,12 @@ func runBundleUpload(c *cli.Context) {
 	if err != nil {
 		printFatal(err.Error())
 	}
+
+	fmt.Println("Adding ConfigStore records")
+	err = handleConfigStoreEntries(fb, stack, formation, bundlePath)
+	if err != nil {
+		printFatal(err.Error())
+	}
 }
 
 func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []cloud66.StackEnvVar) {
@@ -492,6 +514,11 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 	}
 	configurationsDir := filepath.Join(dir, "configurations")
 	err = os.MkdirAll(configurationsDir, os.ModePerm)
+	if err != nil {
+		printFatal(err.Error())
+	}
+	configstoreDir := filepath.Join(dir, configstoreDirectoryName)
+	err = os.MkdirAll(configstoreDir, os.ModePerm)
 	if err != nil {
 		printFatal(err.Error())
 	}
@@ -953,7 +980,7 @@ func createAndUploadFormations(fb *cloud66.FormationBundle, formationName string
 	}
 	fmt.Println("Formation created")
 
-	for _, baseTemplate := range fb.BaseTemplates{
+	for _, baseTemplate := range fb.BaseTemplates {
 		// add stencils
 		err = uploadStencils(baseTemplate, formation, stack, bundlePath, message)
 		if err != nil {
@@ -1019,7 +1046,7 @@ func uploadPolicies(bundleFormation *cloud66.FormationBundle, formation *cloud66
 	// add policies
 	fmt.Println("Adding policies...")
 	policies := make([]*cloud66.Policy, 0)
-	for _, policy := range bundleFormation.Policies{
+	for _, policy := range bundleFormation.Policies {
 		polItem, err := policy.AsPolicy(bundlePath)
 		if err != nil {
 			return err
@@ -1041,7 +1068,7 @@ func uploadTransformations(bundleFormation *cloud66.FormationBundle, formation *
 	// add transformations
 	fmt.Println("Adding transformations...")
 	transformations := make([]*cloud66.Transformation, 0)
-	for _, transformation := range bundleFormation.Transformations{
+	for _, transformation := range bundleFormation.Transformations {
 		trItem, err := transformation.AsTransformation(bundlePath)
 		if err != nil {
 			return err
@@ -1078,7 +1105,6 @@ func uploadHelmReleases(fb *cloud66.FormationBundle, formation *cloud66.Formatio
 }
 
 func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.Formation, stack *cloud66.Stack, bundlePath string) error {
-	fmt.Println("Adding environment variables")
 	envVars := make(map[string]string, 0)
 	for _, envFileName := range fb.Configurations {
 		file, err := os.Open(filepath.Join(bundlePath, "configurations", envFileName))
@@ -1120,6 +1146,54 @@ func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.
 	return nil
 }
 
+func handleConfigStoreEntries(fb *cloud66.FormationBundle, stack *cloud66.Stack, formation *cloud66.Formation, bundlePath string) error {
+	configStoreRecords, err := parseConfigStoreEntriesFromFormationBundle(fb, bundlePath)
+	if err != nil {
+		return err
+	}
+
+	err = uploadConfigStoreEntries(configStoreRecords, stack, formation)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bundlePath string) (*ConfigStoreRecords, error) {
+	configStoreRecordArray := make([]*ConfigStoreRecord, 0)
+	for _, fileName := range fb.ConfigStore {
+		configStoreRecords, err := parseConfigStoreEntriesFromFile(filepath.Join(bundlePath, configstoreDirectoryName, fileName))
+		if err != nil {
+			return nil, err
+		}
+		// NOTE: this may give you records with duplicate keys
+		configStoreRecordArray = append(configStoreRecordArray, configStoreRecords.Records...)
+	}
+
+	result := ConfigStoreRecords{Records: configStoreRecordArray}
+	return &result, nil
+}
+
+func parseConfigStoreEntriesFromFile(filePath string) (*ConfigStoreRecords, error) {
+	marshalledResult, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var unmarshalledResult ConfigStoreRecords
+	err = yaml.Unmarshal(marshalledResult, &unmarshalledResult)
+	if err != nil {
+		return nil, err
+	}
+
+	return &unmarshalledResult, nil
+}
+
+func uploadConfigStoreEntries(configStoreRecords *ConfigStoreRecords, stack *cloud66.Stack, formation *cloud66.Formation) error {
+	return nil
+}
+
 func uploadStencilGroups(fb *cloud66.FormationBundle, formation *cloud66.Formation, stack *cloud66.Stack, bundlePath string, message string) error {
 	var err error
 	fmt.Println("Adding stencil groups...")
@@ -1138,12 +1212,12 @@ func uploadStencilGroups(fb *cloud66.FormationBundle, formation *cloud66.Formati
 	return nil
 }
 
-func getTemplateList(fb *cloud66.FormationBundle) []*cloud66.BaseTemplate{
+func getTemplateList(fb *cloud66.FormationBundle) []*cloud66.BaseTemplate {
 	btrs := make([]*cloud66.BaseTemplate, 0)
 	for _, value := range fb.BaseTemplates {
 		btrs = append(btrs, &cloud66.BaseTemplate{
-			Name: value.Name,
-			GitRepo: value.Repo,
+			Name:      value.Name,
+			GitRepo:   value.Repo,
 			GitBranch: value.Branch,
 		})
 
