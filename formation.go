@@ -1180,6 +1180,12 @@ func parseConfigStoreEntriesFromFile(filePath string) (*cloud66.ConfigStoreRecor
 }
 
 func uploadConfigStoreEntries(configStoreRecords *cloud66.ConfigStoreRecords, stack *cloud66.Stack, formation *cloud66.Formation) error {
+	for _, record := range configStoreRecords.Records {
+		_, err := client.CreateConfigStoreRecord(stack.ConfigStoreNamespace, &record)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
