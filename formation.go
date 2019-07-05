@@ -470,6 +470,7 @@ func runBundleUpload(c *cli.Context) {
 	if err != nil {
 		printFatal(err.Error())
 	}
+	fmt.Println("Added ConfigStore records")
 }
 
 func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []cloud66.StackEnvVar) {
