@@ -1150,8 +1150,8 @@ func handleConfigStoreEntries(fb *cloud66.FormationBundle, stack *cloud66.Stack,
 	return nil
 }
 
-func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bundlePath string) (*cloud66.ConfigStoreRecords, error) {
-	configStoreRecordArray := make([]cloud66.ConfigStoreRecord, 0)
+func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bundlePath string) (*cloud66.BundledConfigStoreRecords, error) {
+	configStoreRecordArray := make([]cloud66.BundledConfigStoreRecord, 0)
 	for _, fileName := range fb.ConfigStore {
 		configStoreRecords, err := parseConfigStoreEntriesFromFile(filepath.Join(bundlePath, configstoreDirectoryName, fileName))
 		if err != nil {
@@ -1161,17 +1161,17 @@ func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bun
 		configStoreRecordArray = append(configStoreRecordArray, configStoreRecords.Records...)
 	}
 
-	result := cloud66.ConfigStoreRecords{Records: configStoreRecordArray}
+	result := cloud66.BundledConfigStoreRecords{Records: configStoreRecordArray}
 	return &result, nil
 }
 
-func parseConfigStoreEntriesFromFile(filePath string) (*cloud66.ConfigStoreRecords, error) {
+func parseConfigStoreEntriesFromFile(filePath string) (*cloud66.BundledConfigStoreRecords, error) {
 	marshalledResult, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
 
-	var unmarshalledResult cloud66.ConfigStoreRecords
+	var unmarshalledResult cloud66.BundledConfigStoreRecords
 	err = yaml.Unmarshal(marshalledResult, &unmarshalledResult)
 	if err != nil {
 		return nil, err
@@ -1180,9 +1180,9 @@ func parseConfigStoreEntriesFromFile(filePath string) (*cloud66.ConfigStoreRecor
 	return &unmarshalledResult, nil
 }
 
-func uploadConfigStoreEntries(configStoreRecords *cloud66.ConfigStoreRecords, stack *cloud66.Stack, formation *cloud66.Formation) error {
+func uploadConfigStoreEntries(configStoreRecords *cloud66.BundledConfigStoreRecords, stack *cloud66.Stack, formation *cloud66.Formation) error {
 	for _, record := range configStoreRecords.Records {
-		_, err := client.CreateConfigStoreRecord(stack.ConfigStoreNamespace, &record)
+		_, err := client.CreateConfigStoreRecord(stack.ConfigStoreNamespace, &record.ConfigStoreRecord)
 		if err != nil {
 			return err
 		}
