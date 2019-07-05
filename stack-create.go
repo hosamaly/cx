@@ -27,10 +27,6 @@ func runCreateStack(c *cli.Context) {
 	if len(name) < 5 {
 		printFatal("name is required and must be at least 5 characters long")
 	}
-	if environment == "" {
-		printFatal("environment is required")
-	}
-
 	// handle service yaml file
 	if serviceYamlFile == "" {
 		printFatal("service_yaml file path is required")
