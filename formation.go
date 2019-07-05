@@ -1150,7 +1150,7 @@ func handleConfigStoreEntries(fb *cloud66.FormationBundle, stack *cloud66.Stack,
 }
 
 func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bundlePath string) (*cloud66.ConfigStoreRecords, error) {
-	configStoreRecordArray := make([]*cloud66.ConfigStoreRecord, 0)
+	configStoreRecordArray := make([]cloud66.ConfigStoreRecord, 0)
 	for _, fileName := range fb.ConfigStore {
 		configStoreRecords, err := parseConfigStoreEntriesFromFile(filepath.Join(bundlePath, configstoreDirectoryName, fileName))
 		if err != nil {
