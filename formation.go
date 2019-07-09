@@ -375,6 +375,9 @@ func runDeployFormation(c *cli.Context) {
 func runBundleDownload(c *cli.Context) {
 	account := mustOrg(c)
 	stack := mustStack(c)
+	if account.Id != stack.AccountId {
+		printFatal("Stack %s is not in account %s. Please make sure your config points to the correct account and that you have specified the correct stack", stack.Name, account.Name)
+	}
 
 	formationName := c.String("formation")
 	if formationName == "" {
@@ -422,6 +425,9 @@ func runBundleDownload(c *cli.Context) {
 func runBundleUpload(c *cli.Context) {
 	account := mustOrg(c)
 	stack := mustStack(c)
+	if account.Id != stack.AccountId {
+		printFatal("Stack %s is not in account %s. Please make sure your config points to the correct account and that you have specified the correct stack", stack.Name, account.Name)
+	}
 
 	formationName := c.String("formation")
 	if formationName == "" {
