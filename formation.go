@@ -933,44 +933,41 @@ func (a stencilBySequence) Less(i, j int) bool { return a[i].Sequence < a[j].Seq
 /* Start Bundle Auxiliary Methods */
 
 func verifyBtrPresence(fb *cloud66.FormationBundle) error {
-	fmt.Print("Verifying the presence of the Base Template Repository\n")
+	fmt.Println("Verifying presence of Base Template Repositories")
 	baseTemplates, err := client.ListBaseTemplates()
 	if err != nil {
 		return err
 	}
-	addedBTRs := make([]*cloud66.BaseTemplate, 0)
+
+	resyncBTRs := make([]*cloud66.BaseTemplate, 0)
 	for _, btr := range fb.BaseTemplates {
-		var btrPresent bool = false
-		for _, remoteBTR := range baseTemplates {
-			if strings.TrimSpace(remoteBTR.GitRepo) == strings.TrimSpace(btr.Repo) && strings.TrimSpace(remoteBTR.GitBranch) == strings.TrimSpace(btr.Branch) && remoteBTR.StatusCode == 6 {
-				btrPresent = true
+		var remoteBTR *cloud66.BaseTemplate
+		for _, rb := range baseTemplates {
+			if strings.TrimSpace(rb.GitRepo) == strings.TrimSpace(btr.Repo) && strings.TrimSpace(rb.GitBranch) == strings.TrimSpace(btr.Branch) {
+				remoteBTR = &rb
 				break
 			}
 		}
-		if !btrPresent {
-			baseTemplate := &cloud66.BaseTemplate{
-				Name:      btr.Name,
-				GitRepo:   btr.Repo,
-				GitBranch: btr.Branch,
-			}
-			baseTemplate, err := client.CreateBaseTemplate(baseTemplate)
-			if err != nil {
-				return err
-			}
-			addedBTRs = append(addedBTRs, baseTemplate)
+
+		if remoteBTR == nil {
+			return fmt.Errorf("Base Template Repository with URL %s and branch %s does not exist upstream. Please make sure it is created, and try again.\n")
+		}
+
+		if remoteBTR.StatusCode != 6 {
+			resyncBTRs = append(resyncBTRs, remoteBTR)
 		}
 	}
-	if len(addedBTRs) > 0 {
-		//Waiting for the new BTRs to be verified
-		fmt.Print("Waiting for the new Base Template Repositories to be verified\n")
+
+	if len(resyncBTRs) > 0 {
+		fmt.Println("Waiting for the new Base Template Repositories to be verified")
 		ready := false
 		for ready == false {
 			time.Sleep(100 * time.Millisecond)
 			ready = true
 			baseTemplates, err = client.ListBaseTemplates()
-			for _, btr := range addedBTRs {
-				for _, remoteBTR := range baseTemplates {
-					if btr.Uid == remoteBTR.Uid && remoteBTR.StatusCode != 5 && remoteBTR.StatusCode != 6 && remoteBTR.StatusCode != 7 {
+			for _, b := range resyncBTRs {
+				for _, rb := range baseTemplates {
+					if b.Uid == rb.Uid && rb.StatusCode != 5 && rb.StatusCode != 6 && rb.StatusCode != 7 {
 						ready = false
 						break
 					}
@@ -978,6 +975,7 @@ func verifyBtrPresence(fb *cloud66.FormationBundle) error {
 			}
 		}
 	}
+
 	return nil
 }
 
