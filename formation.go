@@ -964,7 +964,7 @@ func verifyBtrPresence(fb *cloud66.FormationBundle) error {
 		}
 
 		if remoteBTR == nil {
-			return fmt.Errorf("Base Template Repository with URL %s and branch %s does not exist upstream. Please make sure it is created, and try again.\n")
+			return fmt.Errorf("Base Template Repository with URL %s and branch %s does not exist upstream. Please make sure it is created, and try again.\n", btr.Repo, btr.Branch)
 		}
 
 		if remoteBTR.StatusCode != 6 {
