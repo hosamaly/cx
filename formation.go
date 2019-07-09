@@ -410,6 +410,9 @@ func runBundleDownload(c *cli.Context) {
 
 	for _, formation := range formations {
 		if formation.Name == formationName {
+			err = validateFormationForBundleCreation(&formation)
+			must(err)
+
 			fmt.Println("Fetching ConfigStore records from the server...")
 			bundledConfigStoreRecords, err := downloadBundledConfigStoreRecords(account, stack, &formation)
 			must(err)
@@ -483,6 +486,17 @@ func runBundleUpload(c *cli.Context) {
 		printFatal(err.Error())
 	}
 	fmt.Println("Added ConfigStore records")
+}
+
+func validateFormationForBundleCreation(formation *cloud66.Formation) error {
+	for _, stencil := range formation.Stencils {
+		index := formation.FindIndexByRepoAndBranch(stencil.BtrRepo, stencil.BtrBranch)
+		if index == -1 {
+			return fmt.Errorf("The Base Template Repository of stencil %s (URL: %s, branch: %s) no longer exists upstream. Please make sure it exists and try again", stencil.Filename, stencil.BtrRepo, stencil.BtrBranch)
+		}
+	}
+
+	return nil
 }
 
 func bundleFormation(formation *cloud66.Formation, bundleFile string, envVars []cloud66.StackEnvVar, bundledConfigStoreRecords *cloud66.BundledConfigStoreRecords) {
