@@ -373,6 +373,7 @@ func runDeployFormation(c *cli.Context) {
 }
 
 func runBundleDownload(c *cli.Context) {
+	account := mustOrg(c)
 	stack := mustStack(c)
 
 	formationName := c.String("formation")
@@ -406,7 +407,11 @@ func runBundleDownload(c *cli.Context) {
 
 	for _, formation := range formations {
 		if formation.Name == formationName {
-			bundleFormation(formation, bundleFile, envVars)
+			fmt.Println("Fetching ConfigStore records from the server...")
+			bundledConfigStoreRecords, err := downloadBundledConfigStoreRecords(account, stack, &formation)
+			must(err)
+
+			bundleFormation(&formation, bundleFile, envVars, bundledConfigStoreRecords)
 			return
 		}
 	}
@@ -415,6 +420,7 @@ func runBundleDownload(c *cli.Context) {
 }
 
 func runBundleUpload(c *cli.Context) {
+	account := mustOrg(c)
 	stack := mustStack(c)
 
 	formationName := c.String("formation")
@@ -466,14 +472,14 @@ func runBundleUpload(c *cli.Context) {
 	}
 
 	fmt.Println("Adding ConfigStore records")
-	err = handleConfigStoreEntries(fb, stack, formation, bundlePath)
+	err = handleBundleUploadConfigStoreRecords(fb, account, stack, formation, bundlePath)
 	if err != nil {
 		printFatal(err.Error())
 	}
 	fmt.Println("Added ConfigStore records")
 }
 
-func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []cloud66.StackEnvVar) {
+func bundleFormation(formation *cloud66.Formation, bundleFile string, envVars []cloud66.StackEnvVar, bundledConfigStoreRecords *cloud66.BundledConfigStoreRecords) {
 	// build a temp folder structure
 	topDir, err := ioutil.TempDir("", fmt.Sprintf("%s-formation-bundle-", formation.Name))
 	if err != nil {
@@ -588,6 +594,15 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 	}
 	configurations := []string{filename}
 
+	fmt.Println("Saving ConfigStore records...")
+	filename = "configstore-records.yml"
+	configstorePath := filepath.Join(configstoreDir, filename)
+	err = saveBundledConfigStoreRecords(bundledConfigStoreRecords, configstorePath)
+	if err != nil {
+		printFatal(err.Error())
+	}
+	configstore := []string{filename}
+
 	//add helm releases
 	fmt.Println("Saving helm releases...")
 	for _, release := range formation.HelmReleases {
@@ -603,7 +618,7 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 
 	// create and save the manifest
 	fmt.Println("Saving bundle manifest...")
-	manifest := cloud66.CreateFormationBundle(formation, fmt.Sprintf("cx (%s)", VERSION), configurations)
+	manifest := cloud66.CreateFormationBundle(*formation, fmt.Sprintf("cx (%s)", VERSION), configurations, configstore)
 	buf, err := json.MarshalIndent(manifest, "", "    ")
 	if err != nil {
 		printFatal(err.Error())
@@ -1136,13 +1151,13 @@ func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.
 	return nil
 }
 
-func handleConfigStoreEntries(fb *cloud66.FormationBundle, stack *cloud66.Stack, formation *cloud66.Formation, bundlePath string) error {
+func handleBundleUploadConfigStoreRecords(fb *cloud66.FormationBundle, account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation, bundlePath string) error {
 	configStoreRecords, err := parseConfigStoreEntriesFromFormationBundle(fb, bundlePath)
 	if err != nil {
 		return err
 	}
 
-	err = uploadConfigStoreEntries(configStoreRecords, stack, formation)
+	err = uploadConfigStoreRecords(configStoreRecords, account, stack, formation)
 	if err != nil {
 		return err
 	}
@@ -1180,9 +1195,24 @@ func parseConfigStoreEntriesFromFile(filePath string) (*cloud66.BundledConfigSto
 	return &unmarshalledResult, nil
 }
 
-func uploadConfigStoreEntries(configStoreRecords *cloud66.BundledConfigStoreRecords, stack *cloud66.Stack, formation *cloud66.Formation) error {
+func uploadConfigStoreRecords(configStoreRecords *cloud66.BundledConfigStoreRecords, account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation) error {
 	for _, record := range configStoreRecords.Records {
-		_, err := client.CreateConfigStoreRecord(stack.ConfigStoreNamespace, &record.ConfigStoreRecord)
+		const (
+			BundledConfigStoreAccountScope = "account"
+			BundledConfigStoreStackScope   = "stack"
+		)
+
+		var namespace string
+		switch record.Scope {
+		case cloud66.BundledConfigStoreAccountScope:
+			namespace = account.ConfigStoreNamespace
+		case cloud66.BundledConfigStoreStackScope:
+			namespace = stack.ConfigStoreNamespace
+		default:
+			return fmt.Errorf("ConfigStore record scope %s is not supported. Supported values are: %s, %s.", record.Scope, cloud66.BundledConfigStoreAccountScope, cloud66.BundledConfigStoreStackScope)
+		}
+
+		_, err := client.CreateConfigStoreRecord(namespace, &record.ConfigStoreRecord)
 		if err != nil {
 			if strings.Contains(err.Error(), "Duplicate entry") {
 				fmt.Printf("Failed to add the %s ConfigStore record because it already exists\n", record.Key)
@@ -1191,6 +1221,44 @@ func uploadConfigStoreEntries(configStoreRecords *cloud66.BundledConfigStoreReco
 			}
 		}
 	}
+
+	return nil
+}
+
+func downloadBundledConfigStoreRecords(account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation) (*cloud66.BundledConfigStoreRecords, error) {
+	allRecords := make([]cloud66.BundledConfigStoreRecord, 0)
+
+	accountRecords, err := client.GetConfigStoreRecords(account.ConfigStoreNamespace)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range accountRecords {
+		allRecords = append(allRecords, cloud66.BundledConfigStoreRecord{ConfigStoreRecord: record, Scope: cloud66.BundledConfigStoreAccountScope})
+	}
+
+	stackRecords, err := client.GetConfigStoreRecords(stack.ConfigStoreNamespace)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range stackRecords {
+		allRecords = append(allRecords, cloud66.BundledConfigStoreRecord{ConfigStoreRecord: record, Scope: cloud66.BundledConfigStoreStackScope})
+	}
+
+	result := cloud66.BundledConfigStoreRecords{Records: allRecords}
+	return &result, nil
+}
+
+func saveBundledConfigStoreRecords(bundledConfigStoreRecords *cloud66.BundledConfigStoreRecords, filepath string) error {
+	marshalledOutput, err := yaml.Marshal(&bundledConfigStoreRecords)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(filepath, marshalledOutput, 0600)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
