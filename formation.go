@@ -1215,11 +1215,6 @@ func parseConfigStoreEntriesFromFile(filePath string) (*cloud66.BundledConfigSto
 
 func uploadConfigStoreRecords(configStoreRecords *cloud66.BundledConfigStoreRecords, account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation) error {
 	for _, record := range configStoreRecords.Records {
-		const (
-			BundledConfigStoreAccountScope = "account"
-			BundledConfigStoreStackScope   = "stack"
-		)
-
 		var namespace string
 		switch record.Scope {
 		case cloud66.BundledConfigStoreAccountScope:
