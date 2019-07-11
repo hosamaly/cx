@@ -218,7 +218,7 @@ func beforeCommand(c *cli.Context) error {
 		return fmt.Errorf("no profile named %s found", profileName)
 	}
 
-	if (command != "version") && (command != "help") && (command != "update") && (command != "test") {
+	if (command != "version") && (command != "help") && (command != "update") && (command != "test") && (command != "config") {
 		initClients(c, true)
 	}
 
