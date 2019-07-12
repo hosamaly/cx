@@ -52,15 +52,11 @@ $ cx stacks list mystack -e staging -o wide
 		},
 		cli.Command{
 			Name:  "create",
-			Usage: "creates new docker stack",
+			Usage: "creates a new Maestro stack",
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "name,n",
-					Usage: "New docker stack name.",
-				},
-				cli.StringFlag{
-					Name:  "environment,e",
-					Usage: "New docker stack environment.",
+					Usage: "Stack name.",
 				},
 				cli.StringFlag{
 					Name:  "service_yaml,s",
@@ -70,12 +66,17 @@ $ cx stacks list mystack -e staging -o wide
 					Name:  "manifest_yaml,m",
 					Usage: "File containing your manifest definition (optional)",
 				},
+				cli.StringFlag{
+					Name:  "environment,e",
+					Usage: "[deprecated]",
+				},
+
 			},
 			Action: runCreateStack,
 			Description: `Creates a new docker stack.
 
 Examples:
-$ cx stacks create --name my_docker_stack --environment production --service_yaml service.yml --manifest_yaml manifest.yml
+$ cx stacks create --name my_maestro_stack --service_yaml service.yml --manifest_yaml manifest.yml
 `,
 		},
 		cli.Command{

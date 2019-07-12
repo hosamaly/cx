@@ -121,7 +121,7 @@ func printGenericResponseCustom(genericRes cloud66.GenericResponse, successMessa
 			result = result + "!"
 		}
 		if successMessage != "" {
-			result = fmt.Sprintf("%s\n%s",result, successMessage)
+			result = fmt.Sprintf("%s\n%s", result, successMessage)
 		}
 		log.Println(result)
 	} else {
@@ -132,7 +132,7 @@ func printGenericResponseCustom(genericRes cloud66.GenericResponse, successMessa
 			result = result + "!"
 		}
 		if failMessage != "" {
-			result = fmt.Sprintf("%s\n%s",result, failMessage)
+			result = fmt.Sprintf("%s\n%s", result, failMessage)
 		}
 		printFatal(result)
 	}
@@ -151,6 +151,16 @@ func mustConfirm(warning, desired string) {
 	if confirm != desired {
 		printFatal("Confirmation did not match %q.", desired)
 	}
+}
+
+func ask(question, passAnswer string) bool {
+	fmt.Print(question)
+	var confirm string
+	if _, err := fmt.Scanln(&confirm); err != nil {
+		return false
+	}
+
+	return confirm == passAnswer
 }
 
 func colorizeMessage(color, prefix, message string, args ...interface{}) string {
