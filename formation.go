@@ -24,6 +24,11 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/mgutz/ansi"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/go-yaml/yaml.v2"
+)
+
+const (
+	configstoreDirectoryName = "configstore"
 )
 
 var cmdFormations = &Command{
@@ -574,7 +579,11 @@ func runDeployFormation(c *cli.Context) {
 }
 
 func runBundleDownload(c *cli.Context) {
+	account := mustOrg(c)
 	stack := mustStack(c)
+	if account.Id != stack.AccountId {
+		printFatal("Stack %s is not in account %s. Please make sure your config points to the correct account and that you have specified the correct stack", stack.Name, account.Name)
+	}
 
 	formationName := c.String("formation")
 	if formationName == "" {
@@ -607,7 +616,14 @@ func runBundleDownload(c *cli.Context) {
 
 	for _, formation := range formations {
 		if formation.Name == formationName {
-			bundleFormation(formation, bundleFile, envVars)
+			err = validateFormationForBundleCreation(&formation)
+			must(err)
+
+			fmt.Println("Fetching ConfigStore records from the server...")
+			bundledConfigStoreRecords, err := downloadBundledConfigStoreRecords(account, stack, &formation)
+			must(err)
+
+			bundleFormation(&formation, bundleFile, envVars, bundledConfigStoreRecords)
 			return
 		}
 	}
@@ -616,7 +632,11 @@ func runBundleDownload(c *cli.Context) {
 }
 
 func runBundleUpload(c *cli.Context) {
+	account := mustOrg(c)
 	stack := mustStack(c)
+	if account.Id != stack.AccountId {
+		printFatal("Stack %s is not in account %s. Please make sure your config points to the correct account and that you have specified the correct stack", stack.Name, account.Name)
+	}
 
 	formationName := c.String("formation")
 	if formationName == "" {
@@ -665,9 +685,27 @@ func runBundleUpload(c *cli.Context) {
 	if err != nil {
 		printFatal(err.Error())
 	}
+
+	fmt.Println("Adding ConfigStore records")
+	err = handleBundleUploadConfigStoreRecords(fb, account, stack, formation, bundlePath)
+	if err != nil {
+		printFatal(err.Error())
+	}
+	fmt.Println("Added ConfigStore records")
 }
 
-func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []cloud66.StackEnvVar) {
+func validateFormationForBundleCreation(formation *cloud66.Formation) error {
+	for _, stencil := range formation.Stencils {
+		index := formation.FindIndexByRepoAndBranch(stencil.BtrRepo, stencil.BtrBranch)
+		if index == -1 {
+			return fmt.Errorf("The Base Template Repository of stencil %s (URL: %s, branch: %s) no longer exists upstream. Please make sure it exists and try again", stencil.Filename, stencil.BtrRepo, stencil.BtrBranch)
+		}
+	}
+
+	return nil
+}
+
+func bundleFormation(formation *cloud66.Formation, bundleFile string, envVars []cloud66.StackEnvVar, bundledConfigStoreRecords *cloud66.BundledConfigStoreRecords) {
 	// build a temp folder structure
 	topDir, err := ioutil.TempDir("", fmt.Sprintf("%s-formation-bundle-", formation.Name))
 	if err != nil {
@@ -698,6 +736,11 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 	}
 	configurationsDir := filepath.Join(dir, "configurations")
 	err = os.MkdirAll(configurationsDir, os.ModePerm)
+	if err != nil {
+		printFatal(err.Error())
+	}
+	configstoreDir := filepath.Join(dir, configstoreDirectoryName)
+	err = os.MkdirAll(configstoreDir, os.ModePerm)
 	if err != nil {
 		printFatal(err.Error())
 	}
@@ -777,6 +820,15 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 	}
 	configurations := []string{filename}
 
+	fmt.Println("Saving ConfigStore records...")
+	filename = "configstore-records.yml"
+	configstorePath := filepath.Join(configstoreDir, filename)
+	err = saveBundledConfigStoreRecords(bundledConfigStoreRecords, configstorePath)
+	if err != nil {
+		printFatal(err.Error())
+	}
+	configstore := []string{filename}
+
 	//add helm releases
 	fmt.Println("Saving helm releases...")
 	for _, release := range formation.HelmReleases {
@@ -792,7 +844,7 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 
 	// create and save the manifest
 	fmt.Println("Saving bundle manifest...")
-	manifest := cloud66.CreateFormationBundle(formation, fmt.Sprintf("cx (%s)", VERSION), configurations)
+	manifest := cloud66.CreateFormationBundle(*formation, fmt.Sprintf("cx (%s)", VERSION), configurations, configstore)
 	buf, err := json.MarshalIndent(manifest, "", "    ")
 	if err != nil {
 		printFatal(err.Error())
@@ -1309,44 +1361,41 @@ func (a stencilBySequence) Less(i, j int) bool { return a[i].Sequence < a[j].Seq
 /* Start Bundle Auxiliary Methods */
 
 func verifyBtrPresence(fb *cloud66.FormationBundle) error {
-	fmt.Print("Verifying the presence of the Base Template Repository\n")
+	fmt.Println("Verifying presence of Base Template Repositories")
 	baseTemplates, err := client.ListBaseTemplates()
 	if err != nil {
 		return err
 	}
-	addedBTRs := make([]*cloud66.BaseTemplate, 0)
+
+	resyncBTRs := make([]*cloud66.BaseTemplate, 0)
 	for _, btr := range fb.BaseTemplates {
-		var btrPresent bool = false
-		for _, remoteBTR := range baseTemplates {
-			if strings.TrimSpace(remoteBTR.GitRepo) == strings.TrimSpace(btr.Repo) && strings.TrimSpace(remoteBTR.GitBranch) == strings.TrimSpace(btr.Branch) && remoteBTR.StatusCode == 6 {
-				btrPresent = true
+		var remoteBTR *cloud66.BaseTemplate
+		for _, rb := range baseTemplates {
+			if strings.TrimSpace(rb.GitRepo) == strings.TrimSpace(btr.Repo) && strings.TrimSpace(rb.GitBranch) == strings.TrimSpace(btr.Branch) {
+				remoteBTR = &rb
 				break
 			}
 		}
-		if !btrPresent {
-			baseTemplate := &cloud66.BaseTemplate{
-				Name:      btr.Name,
-				GitRepo:   btr.Repo,
-				GitBranch: btr.Branch,
-			}
-			baseTemplate, err := client.CreateBaseTemplate(baseTemplate)
-			if err != nil {
-				return err
-			}
-			addedBTRs = append(addedBTRs, baseTemplate)
+
+		if remoteBTR == nil {
+			return fmt.Errorf("Base Template Repository with URL %s and branch %s does not exist upstream. Please make sure it is created, and try again.\n", btr.Repo, btr.Branch)
+		}
+
+		if remoteBTR.StatusCode != 6 {
+			resyncBTRs = append(resyncBTRs, remoteBTR)
 		}
 	}
-	if len(addedBTRs) > 0 {
-		//Waiting for the new BTRs to be verified
-		fmt.Print("Waiting for the new Base Template Repositories to be verified\n")
+
+	if len(resyncBTRs) > 0 {
+		fmt.Println("Waiting for the new Base Template Repositories to be verified")
 		ready := false
 		for ready == false {
 			time.Sleep(100 * time.Millisecond)
 			ready = true
 			baseTemplates, err = client.ListBaseTemplates()
-			for _, btr := range addedBTRs {
-				for _, remoteBTR := range baseTemplates {
-					if btr.Uid == remoteBTR.Uid && remoteBTR.StatusCode != 5 && remoteBTR.StatusCode != 6 && remoteBTR.StatusCode != 7 {
+			for _, b := range resyncBTRs {
+				for _, rb := range baseTemplates {
+					if b.Uid == rb.Uid && rb.StatusCode != 5 && rb.StatusCode != 6 && rb.StatusCode != 7 {
 						ready = false
 						break
 					}
@@ -1354,6 +1403,7 @@ func verifyBtrPresence(fb *cloud66.FormationBundle) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -1492,7 +1542,6 @@ func uploadHelmReleases(fb *cloud66.FormationBundle, formation *cloud66.Formatio
 }
 
 func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.Formation, stack *cloud66.Stack, bundlePath string) error {
-	fmt.Println("Adding environment variables")
 	envVars := make(map[string]string, 0)
 	for _, envFileName := range fb.Configurations {
 		file, err := os.Open(filepath.Join(bundlePath, "configurations", envFileName))
@@ -1519,7 +1568,7 @@ func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.
 		asyncResult, err := client.StackEnvVarNew(stack.Uid, key, value)
 		if err != nil {
 			if err.Error() == "Another environment variable with the same key exists. Use PUT to change it." {
-				fmt.Print("Failed to add the ", key, " environment variable because already present\n")
+				fmt.Printf("Failed to add the %s environment variable because it already exists\n", key)
 			} else {
 				return err
 			}
@@ -1531,6 +1580,112 @@ func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.
 			}
 		}
 	}
+	return nil
+}
+
+func handleBundleUploadConfigStoreRecords(fb *cloud66.FormationBundle, account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation, bundlePath string) error {
+	configStoreRecords, err := parseConfigStoreEntriesFromFormationBundle(fb, bundlePath)
+	if err != nil {
+		return err
+	}
+
+	err = uploadConfigStoreRecords(configStoreRecords, account, stack, formation)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bundlePath string) (*cloud66.BundledConfigStoreRecords, error) {
+	configStoreRecordArray := make([]cloud66.BundledConfigStoreRecord, 0)
+	for _, fileName := range fb.ConfigStore {
+		configStoreRecords, err := parseConfigStoreEntriesFromFile(filepath.Join(bundlePath, configstoreDirectoryName, fileName))
+		if err != nil {
+			return nil, err
+		}
+		// NOTE: this may give you records with duplicate keys
+		configStoreRecordArray = append(configStoreRecordArray, configStoreRecords.Records...)
+	}
+
+	result := cloud66.BundledConfigStoreRecords{Records: configStoreRecordArray}
+	return &result, nil
+}
+
+func parseConfigStoreEntriesFromFile(filePath string) (*cloud66.BundledConfigStoreRecords, error) {
+	marshalledResult, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var unmarshalledResult cloud66.BundledConfigStoreRecords
+	err = yaml.Unmarshal(marshalledResult, &unmarshalledResult)
+	if err != nil {
+		return nil, err
+	}
+
+	return &unmarshalledResult, nil
+}
+
+func uploadConfigStoreRecords(configStoreRecords *cloud66.BundledConfigStoreRecords, account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation) error {
+	for _, record := range configStoreRecords.Records {
+		var namespace string
+		switch record.Scope {
+		case cloud66.BundledConfigStoreAccountScope:
+			namespace = account.ConfigStoreNamespace
+		case cloud66.BundledConfigStoreStackScope:
+			namespace = stack.ConfigStoreNamespace
+		default:
+			return fmt.Errorf("ConfigStore record scope %s is not supported. Supported values are: %s, %s.", record.Scope, cloud66.BundledConfigStoreAccountScope, cloud66.BundledConfigStoreStackScope)
+		}
+
+		_, err := client.CreateConfigStoreRecord(namespace, &record.ConfigStoreRecord)
+		if err != nil {
+			if strings.Contains(err.Error(), "Duplicate entry") {
+				fmt.Printf("Failed to add the %s ConfigStore record because it already exists\n", record.Key)
+			} else {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func downloadBundledConfigStoreRecords(account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation) (*cloud66.BundledConfigStoreRecords, error) {
+	allRecords := make([]cloud66.BundledConfigStoreRecord, 0)
+
+	accountRecords, err := client.GetConfigStoreRecords(account.ConfigStoreNamespace)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range accountRecords {
+		allRecords = append(allRecords, cloud66.BundledConfigStoreRecord{ConfigStoreRecord: record, Scope: cloud66.BundledConfigStoreAccountScope})
+	}
+
+	stackRecords, err := client.GetConfigStoreRecords(stack.ConfigStoreNamespace)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range stackRecords {
+		allRecords = append(allRecords, cloud66.BundledConfigStoreRecord{ConfigStoreRecord: record, Scope: cloud66.BundledConfigStoreStackScope})
+	}
+
+	result := cloud66.BundledConfigStoreRecords{Records: allRecords}
+	return &result, nil
+}
+
+func saveBundledConfigStoreRecords(bundledConfigStoreRecords *cloud66.BundledConfigStoreRecords, filepath string) error {
+	marshalledOutput, err := yaml.Marshal(&bundledConfigStoreRecords)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(filepath, marshalledOutput, 0600)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

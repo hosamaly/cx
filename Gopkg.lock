@@ -11,11 +11,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:c802c5479676ba151e8797d3f04ef39f0d5095270f11233c7b19e4cc70fbbc1b"
+  digest = "1:27e90ddacbbf8ee73e93bbf1c216618a9c42b441c8300380c9606e377defe357"
   name = "github.com/cloud66-oss/cloud66"
   packages = ["."]
   pruneopts = "UT"
-  revision = "28644de2366f732ce68a74d96634ab653d82953f"
+  revision = "0a13a84d103ccf2d5ed211b52ac392bb40662e5f"
 
 [[projects]]
   branch = "master"
@@ -252,6 +252,14 @@
 
 [[projects]]
   digest = "1:4d2e5a73dc1500038e504a8d78b986630e3626dc027bc030ba5c75da257cdb96"
+  name = "gopkg.in/go-yaml/yaml.v2"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "51d6538a90f86fe93ac480b35f37b2be17fef232"
+  version = "v2.2.2"
+
+[[projects]]
+  digest = "1:4d2e5a73dc1500038e504a8d78b986630e3626dc027bc030ba5c75da257cdb96"
   name = "gopkg.in/yaml.v2"
   packages = ["."]
   pruneopts = "UT"
@@ -279,6 +287,7 @@
     "github.com/onsi/gomega",
     "github.com/sirupsen/logrus",
     "github.com/toqueteos/webbrowser",
+    "gopkg.in/go-yaml/yaml.v2",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
