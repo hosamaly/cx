@@ -511,7 +511,7 @@ func mustOrg(c *cli.Context) *cloud66.Account {
 	}
 
 	if org == nil {
-		printFatal("No organization specified. Please use --org flag")
+		printFatal("No organization specified.\nTo define a profile with an org assigned:\n$ cx config create yourprofile --org your_org_name\n$ cx config use yourprofile\n\nSee more here: https://help.cloud66.com/skycap/references/toolbelt.html#profiles-for-multiple-account-support")
 	}
 
 	return org

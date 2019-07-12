@@ -18,10 +18,17 @@ import (
 	"time"
 
 	"github.com/cloud66-oss/cloud66"
-	notifiers "github.com/cloud66-oss/trackman/notifiers"
+	"github.com/cloud66-oss/trackman/notifiers"
 	trackmanType "github.com/cloud66-oss/trackman/utils"
 	"github.com/cloud66/cli"
+	"github.com/fsnotify/fsnotify"
+	"github.com/mgutz/ansi"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/go-yaml/yaml.v2"
+)
+
+const (
+	configstoreDirectoryName = "configstore"
 )
 
 var cmdFormations = &Command{
@@ -71,9 +78,51 @@ $ cx formations list -s mystack foo bar // only show formations foo and bar
 			},
 		},
 		{
+			Name:   "fetch",
+			Action: runFetchFormation,
+			Usage:  "Fetch all stencils of a Formation",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "formation,f",
+					Usage: "the formation name",
+				},
+				cli.StringFlag{
+					Name:  "outdir",
+					Usage: "Output director for the Formation. Will be created if missing",
+				},
+				cli.BoolFlag{
+					Name:  "overwrite",
+					Usage: "Overwrite existing files in outdir if present. Default is false and asks for overwrite permissions per file",
+				},
+			},
+		},
+		{
+			Name:   "commit",
+			Action: runCommitFormation,
+			Usage:  "Commit all given stencils for a formation back",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "formation,f",
+					Usage: "the formation name",
+				},
+				cli.StringFlag{
+					Name:  "dir",
+					Usage: "Directory holding the formation stencils. Cannot be used alongside --stencil",
+				},
+				cli.StringFlag{
+					Name:  "stencil",
+					Usage: "A single stencil file to commit. Cannot be used alongside --dir",
+				},
+				cli.StringFlag{
+					Name:  "message",
+					Usage: "Commit message",
+				},
+			},
+		},
+		{
 			Name:   "deploy",
 			Action: runDeployFormation,
-			Usage:  "Deploy the existing formation",
+			Usage:  "Deploy an existing formation",
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "formation,f",
@@ -91,22 +140,6 @@ $ cx formations list -s mystack foo bar // only show formations foo and bar
 					Name:  "log-level",
 					Usage: "[OPTIONAL, DEFAULT: info] log level. Use debug to see process output",
 				},
-				//cli.StringFlag{
-				//	Name:  "steps",
-				//	Usage: "steps to be taken",
-				//},
-				//cli.BoolFlag{
-				//	Name:  "ignore-errors",
-				//	Usage: "[optional] return anything that can be rendered and ignore errors. Default: false",
-				//},
-				//cli.BoolFlag{
-				//	Name:  "ignore-warnings",
-				//	Usage: "[optional] return anything that can be rendered and ignore warnings. Default: false",
-				//},
-				//cli.StringFlag{
-				//	Name:  "outdir",
-				//	Usage: "[optional] save the rendered files in this directory",
-				//},
 			},
 		},
 		{
@@ -209,13 +242,56 @@ $ cx formations stencils list --formation bar
 					},
 				},
 				{
+					Name:   "render",
+					Usage:  "Renders a stencil based on the given content without committing it into the Formation git repository",
+					Action: runRenderStencil,
+					Flags: []cli.Flag{
+						cli.StringFlag{
+							Name:  "formation",
+							Usage: "Specify the formation to use",
+						},
+						cli.StringFlag{
+							Name:  "stack,s",
+							Usage: "full or partial stack name. This can be omitted if the current directory is a stack directory",
+						},
+						cli.StringFlag{
+							Name:  "stencil-file",
+							Usage: "Stencil filename. This can be a full file path but the file name should be identical to the one available as part of the Formation",
+						},
+						cli.StringFlag{
+							Name:  "stencil-folder",
+							Usage: "Render all files within the folder. Cannot be used with stencil-file at the same time",
+						},
+						cli.StringFlag{
+							Name:  "snapshot",
+							Usage: "Snapshot ID. Default uses the latest snapshot",
+						},
+						cli.StringFlag{
+							Name:  "output",
+							Usage: "Full file name and path to save the rendered stencil. If missing it will output to stdout",
+						},
+						cli.BoolFlag{
+							Name:  "watch",
+							Usage: "Watches the file or the folder for changes and renders every time there is a new change",
+						},
+						cli.BoolFlag{
+							Name:  "ignore-errors",
+							Usage: "if set, it will return anything that can be rendered and ignores the errors",
+						},
+						cli.BoolFlag{
+							Name:  "ignore-warnings",
+							Usage: "if set, it will return anything that can be rendered and ignores the warnings",
+						},
+					},
+				},
+				{
 					Name:   "add",
 					Usage:  "Add a stencil to the formation",
 					Action: runAddStencil,
 					Flags: []cli.Flag{
 						cli.StringFlag{
 							Name:  "formation",
-							Usage: "Specify the formaiton to use",
+							Usage: "Specify the formation to use",
 						},
 						cli.StringFlag{
 							Name:  "stack,s",
@@ -306,6 +382,141 @@ func runCreateFormation(c *cli.Context) {
 	fmt.Println("Formation created")
 }
 
+func runCommitFormation(c *cli.Context) {
+	stack := mustStack(c)
+
+	formationName := c.String("formation")
+	if formationName == "" {
+		printFatal("No formation provided. Please use --formation to specify a formation")
+	}
+
+	var formation *cloud66.Formation
+	formations, err := client.Formations(stack.Uid, true)
+	must(err)
+	for _, innerFormation := range formations {
+		if innerFormation.Name == formationName {
+			formation = &innerFormation
+			break
+		}
+	}
+	if formation == nil {
+		printFatal("Formation with name \"%v\" could not be found", formationName)
+	}
+
+	dir := c.String("dir")
+	stencilOption := c.String("stencil")
+	if dir == "" && stencilOption == "" {
+		printFatal("Either --dir or --stencil should be provided")
+	}
+
+	if dir != "" && stencilOption != "" {
+		printFatal("Cannot use both --dir and --stencil at the same time")
+	}
+
+	message := c.String("message")
+	if message == "" {
+		printFatal("No message provided")
+	}
+
+	filesToSave := make([]string, 0)
+	if dir != "" {
+		fileList, err := ioutil.ReadDir(dir)
+		if err != nil {
+			printFatal("Cannot fetch file list in %s: %s", dir, err.Error())
+		}
+		for _, file := range fileList {
+			filesToSave = append(filesToSave, filepath.Join(dir, file.Name()))
+		}
+	} else {
+		filesToSave = append(filesToSave, stencilOption)
+	}
+
+	for _, file := range filesToSave {
+		if does, _ := fileExists(file); !does {
+			printFatal("Cannot find %s to save", file)
+		}
+	}
+
+	for _, stencilFile := range filesToSave {
+		stencilName := filepath.Base(stencilFile)
+		stencil := formation.FindStencil(stencilName)
+		if stencil == nil {
+			printFatal("No stencil named %s found on the formation", stencilName)
+		}
+
+		body, err := ioutil.ReadFile(stencilFile)
+		if err != nil {
+			printFatal("Failed to read %s: %s", stencilName, err.Error())
+		}
+		_, err = client.UpdateStencil(stack.Uid, formation.Uid, stencil.Uid, message, body)
+		if err != nil {
+			printFatal("Failed to commit %s: %s", stencilFile, err.Error())
+		}
+
+		fmt.Printf("Saved %s\n", stencilName)
+	}
+
+	fmt.Println("Done")
+}
+
+func runFetchFormation(c *cli.Context) {
+	stack := mustStack(c)
+
+	formationName := c.String("formation")
+	if formationName == "" {
+		printFatal("No formation provided. Please use --formation to specify a formation")
+	}
+
+	var formation *cloud66.Formation
+	formations, err := client.Formations(stack.Uid, true)
+	must(err)
+	for _, innerFormation := range formations {
+		if innerFormation.Name == formationName {
+			formation = &innerFormation
+			break
+		}
+	}
+	if formation == nil {
+		printFatal("Formation with name \"%v\" could not be found", formationName)
+	}
+
+	outDir := c.String("outdir")
+	if outDir == "" {
+		printFatal("No output directory provided. Use outdir option")
+		cli.ShowSubcommandHelp(c)
+	}
+
+	stencilDir := filepath.Join(outDir, "stencils")
+	if err := os.MkdirAll(stencilDir, os.ModePerm); err != nil {
+		printFatal("Unable to create directory %s: %s", outDir, err.Error())
+	}
+
+	overwrite := c.Bool("overwrite")
+
+	for _, stencil := range formation.Stencils {
+		body := []byte(stencil.Body)
+		write := false
+		stencilFile := filepath.Join(stencilDir, stencil.Filename)
+		if does, _ := fileExists(stencilFile); does {
+			if !overwrite {
+				write = ask(fmt.Sprintf("%s already exists. Overwrite N/y?", stencil.Filename), "y")
+			} else {
+				write = true
+			}
+		} else {
+			write = true
+		}
+
+		if write {
+			if err := ioutil.WriteFile(stencilFile, body, 0644); err != nil {
+				printFatal("Writing %s to %s failed: %s", stencil.Filename, stencilDir, err.Error())
+			}
+		}
+	}
+
+	fmt.Printf("\nFormation is available at %s\n", stencilDir)
+}
+
 func runDeployFormation(c *cli.Context) {
 	stack := mustStack(c)
 
@@ -368,7 +579,11 @@ func runDeployFormation(c *cli.Context) {
 }
 
 func runBundleDownload(c *cli.Context) {
+	account := mustOrg(c)
 	stack := mustStack(c)
+	if account.Id != stack.AccountId {
+		printFatal("Stack %s is not in account %s. Please make sure your config points to the correct account and that you have specified the correct stack", stack.Name, account.Name)
+	}
 
 	formationName := c.String("formation")
 	if formationName == "" {
@@ -401,7 +616,14 @@ func runBundleDownload(c *cli.Context) {
 
 	for _, formation := range formations {
 		if formation.Name == formationName {
-			bundleFormation(formation, bundleFile, envVars)
+			err = validateFormationForBundleCreation(&formation)
+			must(err)
+
+			fmt.Println("Fetching ConfigStore records from the server...")
+			bundledConfigStoreRecords, err := downloadBundledConfigStoreRecords(account, stack, &formation)
+			must(err)
+
+			bundleFormation(&formation, bundleFile, envVars, bundledConfigStoreRecords)
 			return
 		}
 	}
@@ -410,7 +632,11 @@ func runBundleDownload(c *cli.Context) {
 }
 
 func runBundleUpload(c *cli.Context) {
+	account := mustOrg(c)
 	stack := mustStack(c)
+	if account.Id != stack.AccountId {
+		printFatal("Stack %s is not in account %s. Please make sure your config points to the correct account and that you have specified the correct stack", stack.Name, account.Name)
+	}
 
 	formationName := c.String("formation")
 	if formationName == "" {
@@ -459,9 +685,27 @@ func runBundleUpload(c *cli.Context) {
 	if err != nil {
 		printFatal(err.Error())
 	}
+
+	fmt.Println("Adding ConfigStore records")
+	err = handleBundleUploadConfigStoreRecords(fb, account, stack, formation, bundlePath)
+	if err != nil {
+		printFatal(err.Error())
+	}
+	fmt.Println("Added ConfigStore records")
 }
 
-func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []cloud66.StackEnvVar) {
+func validateFormationForBundleCreation(formation *cloud66.Formation) error {
+	for _, stencil := range formation.Stencils {
+		index := formation.FindIndexByRepoAndBranch(stencil.BtrRepo, stencil.BtrBranch)
+		if index == -1 {
+			return fmt.Errorf("The Base Template Repository of stencil %s (URL: %s, branch: %s) no longer exists upstream. Please make sure it exists and try again", stencil.Filename, stencil.BtrRepo, stencil.BtrBranch)
+		}
+	}
+
+	return nil
+}
+
+func bundleFormation(formation *cloud66.Formation, bundleFile string, envVars []cloud66.StackEnvVar, bundledConfigStoreRecords *cloud66.BundledConfigStoreRecords) {
 	// build a temp folder structure
 	topDir, err := ioutil.TempDir("", fmt.Sprintf("%s-formation-bundle-", formation.Name))
 	if err != nil {
@@ -492,6 +736,11 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 	}
 	configurationsDir := filepath.Join(dir, "configurations")
 	err = os.MkdirAll(configurationsDir, os.ModePerm)
+	if err != nil {
+		printFatal(err.Error())
+	}
+	configstoreDir := filepath.Join(dir, configstoreDirectoryName)
+	err = os.MkdirAll(configstoreDir, os.ModePerm)
 	if err != nil {
 		printFatal(err.Error())
 	}
@@ -571,6 +820,15 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 	}
 	configurations := []string{filename}
 
+	fmt.Println("Saving ConfigStore records...")
+	filename = "configstore-records.yml"
+	configstorePath := filepath.Join(configstoreDir, filename)
+	err = saveBundledConfigStoreRecords(bundledConfigStoreRecords, configstorePath)
+	if err != nil {
+		printFatal(err.Error())
+	}
+	configstore := []string{filename}
+
 	//add helm releases
 	fmt.Println("Saving helm releases...")
 	for _, release := range formation.HelmReleases {
@@ -586,7 +844,7 @@ func bundleFormation(formation cloud66.Formation, bundleFile string, envVars []c
 
 	// create and save the manifest
 	fmt.Println("Saving bundle manifest...")
-	manifest := cloud66.CreateFormationBundle(formation, fmt.Sprintf("cx (%s)", VERSION), configurations)
+	manifest := cloud66.CreateFormationBundle(*formation, fmt.Sprintf("cx (%s)", VERSION), configurations, configstore)
 	buf, err := json.MarshalIndent(manifest, "", "    ")
 	if err != nil {
 		printFatal(err.Error())
@@ -686,6 +944,214 @@ func runListStencils(c *cli.Context) {
 	printFatal("No formation named '%s' found", formationName)
 }
 
+func runRenderStencil(c *cli.Context) {
+	stack := mustStack(c)
+
+	formationName := c.String("formation")
+	if formationName == "" {
+		printFatal("No formation provided. Please use --formation to specify a formation")
+	}
+
+	stencilFolder := c.String("stencil-folder")
+	stencilFilename := c.String("stencil-file")
+	if stencilFilename == "" && stencilFolder == "" {
+		printFatal("No stencil file or folder provided. Please use --stencil-file or --stencil-folder to specify a stencil file or folder")
+	}
+	if stencilFolder != "" && stencilFilename != "" {
+		printFatal("Both --stencil-file and --stencil-folder provided. Please use only one")
+	}
+
+	output := c.String("output")
+	snapshotID := c.String("snapshot")
+	stdout := (output == "")
+	watch := c.Bool("watch")
+	ignoreWarnings := c.Bool("ignore-warnings")
+	ignoreErrors := c.Bool("ignore-errors")
+
+	if watch && stdout {
+		printFatal("Cannot use --watch without --output")
+	}
+
+	filesToRender := make([]string, 0)
+	if stencilFolder != "" {
+		fileList, err := ioutil.ReadDir(stencilFolder)
+		if err != nil {
+			printFatal("Failed to fetch all files from folder %s: %s", stencilFolder, err.Error())
+		}
+		for _, file := range fileList {
+			filesToRender = append(filesToRender, filepath.Join(stencilFolder, file.Name()))
+		}
+	} else {
+		filesToRender = append(filesToRender, stencilFilename)
+	}
+
+	var outdir string
+	// if output is defined, then make sure we have a folder for it
+	if !stdout {
+		if stencilFolder != "" {
+			outdir = output
+		} else {
+			outdir = filepath.Dir(output)
+		}
+
+		os.MkdirAll(outdir, os.ModePerm)
+	}
+
+	for _, stencil := range filesToRender {
+		file := filepath.Base(stencil)
+		if stencilFolder != "" {
+			output = filepath.Join(outdir, file)
+		}
+
+		if !stdout {
+			fmt.Printf("Rendering %s to %s\n", file, output)
+		}
+		// output filename is sequenced if provided. otherwise, it's concatenated
+		renderStencil(stencil, formationName, stack, output, snapshotID, ignoreWarnings, ignoreErrors)
+	}
+
+	if watch {
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			printFatal("Failed to setup a file watcher: %s", err.Error())
+		}
+		defer watcher.Close()
+
+		done := make(chan bool)
+
+		fmt.Println("Watching for changes...")
+
+		go func() {
+			for {
+				select {
+				case event, ok := <-watcher.Events:
+					if !ok {
+						return
+					}
+					if event.Op&fsnotify.Write == fsnotify.Write {
+						changedFile := filepath.Base(event.Name)
+						output := filepath.Join(outdir, changedFile)
+						fmt.Printf("Rendering %s to %s\n", changedFile, output)
+						renderStencil(event.Name, formationName, stack, output, snapshotID, ignoreWarnings, ignoreErrors)
+					}
+				case err, ok := <-watcher.Errors:
+					if !ok {
+						return
+					}
+					printFatal("Error during file change event: %s", err.Error())
+				}
+			}
+		}()
+
+		for _, file := range filesToRender {
+			err = watcher.Add(file)
+			if err != nil {
+				printFatal("Failed to add a watch for %s: %s", file, err.Error())
+			}
+		}
+		<-done
+	}
+}
+
+func renderStencil(stencilFilename string, formationName string, stack *cloud66.Stack, output string, snapshotID string, ignoreWarnings bool, ignoreErrors bool) {
+	if does, _ := fileExists(stencilFilename); !does {
+		printFatal("Cannot find %s", stencilFilename)
+	}
+	// find the file. it should exist
+	stencilName := filepath.Base(stencilFilename)
+
+	// find the snapshot
+	var snapshotUID string
+	if snapshotID == "" || snapshotID == "latest" {
+		snapshots, err := client.Snapshots(stack.Uid)
+		must(err)
+		sort.Sort(snapshotsByDate(snapshots))
+		if len(snapshots) == 0 {
+			printFatal("No snapshots found")
+		}
+
+		snapshotUID = snapshots[0].Uid
+	} else {
+		snapshotUID = snapshotID
+	}
+
+	var formations []cloud66.Formation
+	var err error
+	formations, err = client.Formations(stack.Uid, false)
+	must(err)
+
+	stencilUID := ""
+	formationUID := ""
+
+	for _, formation := range formations {
+		if formation.Name == formationName {
+			formationUID = formation.Uid
+			for _, stencil := range formation.Stencils {
+				if stencil.Filename == stencilName {
+					// we have the stencil get the ID
+					stencilUID = stencil.Uid
+				}
+			}
+
+			if stencilUID == "" {
+				printFatal("No stencil named '%s' found", stencilName)
+			}
+		}
+	}
+
+	if formationUID == "" {
+		printFatal("No formation named '%s' found", formationName)
+	}
+
+	// Read file to byte slice
+	body, err := ioutil.ReadFile(stencilFilename)
+	if err != nil {
+		printFatal("Failed to read %s: %s", stencilFilename, err.Error())
+	}
+
+	var renders *cloud66.Renders
+	renders, err = client.RenderStencil(stack.Uid, snapshotUID, formationUID, stencilUID, body)
+	must(err)
+
+	foundErrors := renders.Errors()
+	if len(foundErrors) != 0 {
+		fmt.Fprintln(os.Stderr, ansi.Color("Error during rendering of stencils:", "red+h"))
+		for _, renderError := range foundErrors {
+			fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("\t%s in %s\n", renderError.Text, renderError.Stencil), "red+h"))
+		}
+
+		if !ignoreErrors {
+			return
+		}
+	}
+
+	foundWarnings := renders.Warnings()
+	if len(foundWarnings) != 0 {
+		fmt.Fprintln(os.Stderr, ansi.Color("Warning during rendering of stencils:", "yellow"))
+		for _, renderError := range foundWarnings {
+			fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("\t%s in %s\n", renderError.Text, renderError.Stencil), "yellow"))
+		}
+
+		if !ignoreWarnings {
+			return
+		}
+	}
+
+	// content
+	for _, v := range renders.Stencils {
+		// to a file
+		if output != "" {
+			err = ioutil.WriteFile(output, []byte(v.Content), 0644)
+			if err != nil {
+				printFatal(err.Error())
+			}
+		} else {
+			// concatenate
+			fmt.Printf("%s---\n", v.Content)
+		}
+	}
+}
+
 func runShowStencil(c *cli.Context) {
 	stack := mustStack(c)
 
@@ -696,7 +1162,7 @@ func runShowStencil(c *cli.Context) {
 
 	stencilName := c.String("stencil")
 	if stencilName == "" {
-		printFatal("No stencil name provided. Please use --stencil to specify a formation")
+		printFatal("No stencil name provided. Please use --stencil to specify a stencil")
 	}
 
 	var formations []cloud66.Formation
@@ -895,44 +1361,41 @@ func (a stencilBySequence) Less(i, j int) bool { return a[i].Sequence < a[j].Seq
 /* Start Bundle Auxiliary Methods */
 
 func verifyBtrPresence(fb *cloud66.FormationBundle) error {
-	fmt.Print("Verifying the presence of the Base Template Repository\n")
+	fmt.Println("Verifying presence of Base Template Repositories")
 	baseTemplates, err := client.ListBaseTemplates()
 	if err != nil {
 		return err
 	}
-	addedBTRs := make([]*cloud66.BaseTemplate, 0)
+
+	resyncBTRs := make([]*cloud66.BaseTemplate, 0)
 	for _, btr := range fb.BaseTemplates {
-		var btrPresent bool = false
-		for _, remoteBTR := range baseTemplates {
-			if strings.TrimSpace(remoteBTR.GitRepo) == strings.TrimSpace(btr.Repo) && strings.TrimSpace(remoteBTR.GitBranch) == strings.TrimSpace(btr.Branch) && remoteBTR.StatusCode == 6 {
-				btrPresent = true
+		var remoteBTR *cloud66.BaseTemplate
+		for _, rb := range baseTemplates {
+			if strings.TrimSpace(rb.GitRepo) == strings.TrimSpace(btr.Repo) && strings.TrimSpace(rb.GitBranch) == strings.TrimSpace(btr.Branch) {
+				remoteBTR = &rb
 				break
 			}
 		}
-		if !btrPresent {
-			baseTemplate := &cloud66.BaseTemplate{
-				Name:      btr.Name,
-				GitRepo:   btr.Repo,
-				GitBranch: btr.Branch,
-			}
-			baseTemplate, err := client.CreateBaseTemplate(baseTemplate)
-			if err != nil {
-				return err
-			}
-			addedBTRs = append(addedBTRs, baseTemplate)
+
+		if remoteBTR == nil {
+			return fmt.Errorf("Base Template Repository with URL %s and branch %s does not exist upstream. Please make sure it is created, and try again.\n", btr.Repo, btr.Branch)
+		}
+
+		if remoteBTR.StatusCode != 6 {
+			resyncBTRs = append(resyncBTRs, remoteBTR)
 		}
 	}
-	if len(addedBTRs) > 0 {
-		//Waiting for the new BTRs to be verified
-		fmt.Print("Waiting for the new Base Template Repositories to be verified\n")
+
+	if len(resyncBTRs) > 0 {
+		fmt.Println("Waiting for the new Base Template Repositories to be verified")
 		ready := false
 		for ready == false {
 			time.Sleep(100 * time.Millisecond)
 			ready = true
 			baseTemplates, err = client.ListBaseTemplates()
-			for _, btr := range addedBTRs {
-				for _, remoteBTR := range baseTemplates {
-					if btr.Uid == remoteBTR.Uid && remoteBTR.StatusCode != 5 && remoteBTR.StatusCode != 6 && remoteBTR.StatusCode != 7 {
+			for _, b := range resyncBTRs {
+				for _, rb := range baseTemplates {
+					if b.Uid == rb.Uid && rb.StatusCode != 5 && rb.StatusCode != 6 && rb.StatusCode != 7 {
 						ready = false
 						break
 					}
@@ -940,6 +1403,7 @@ func verifyBtrPresence(fb *cloud66.FormationBundle) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -953,7 +1417,7 @@ func createAndUploadFormations(fb *cloud66.FormationBundle, formationName string
 	}
 	fmt.Println("Formation created")
 
-	for _, baseTemplate := range fb.BaseTemplates{
+	for _, baseTemplate := range fb.BaseTemplates {
 		// add stencils
 		err = uploadStencils(baseTemplate, formation, stack, bundlePath, message)
 		if err != nil {
@@ -1019,7 +1483,7 @@ func uploadPolicies(bundleFormation *cloud66.FormationBundle, formation *cloud66
 	// add policies
 	fmt.Println("Adding policies...")
 	policies := make([]*cloud66.Policy, 0)
-	for _, policy := range bundleFormation.Policies{
+	for _, policy := range bundleFormation.Policies {
 		polItem, err := policy.AsPolicy(bundlePath)
 		if err != nil {
 			return err
@@ -1041,7 +1505,7 @@ func uploadTransformations(bundleFormation *cloud66.FormationBundle, formation *
 	// add transformations
 	fmt.Println("Adding transformations...")
 	transformations := make([]*cloud66.Transformation, 0)
-	for _, transformation := range bundleFormation.Transformations{
+	for _, transformation := range bundleFormation.Transformations {
 		trItem, err := transformation.AsTransformation(bundlePath)
 		if err != nil {
 			return err
@@ -1078,7 +1542,6 @@ func uploadHelmReleases(fb *cloud66.FormationBundle, formation *cloud66.Formatio
 }
 
 func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.Formation, stack *cloud66.Stack, bundlePath string) error {
-	fmt.Println("Adding environment variables")
 	envVars := make(map[string]string, 0)
 	for _, envFileName := range fb.Configurations {
 		file, err := os.Open(filepath.Join(bundlePath, "configurations", envFileName))
@@ -1105,7 +1568,7 @@ func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.
 		asyncResult, err := client.StackEnvVarNew(stack.Uid, key, value)
 		if err != nil {
 			if err.Error() == "Another environment variable with the same key exists. Use PUT to change it." {
-				fmt.Print("Failed to add the ", key, " environment variable because already present\n")
+				fmt.Printf("Failed to add the %s environment variable because it already exists\n", key)
 			} else {
 				return err
 			}
@@ -1117,6 +1580,112 @@ func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.
 			}
 		}
 	}
+	return nil
+}
+
+func handleBundleUploadConfigStoreRecords(fb *cloud66.FormationBundle, account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation, bundlePath string) error {
+	configStoreRecords, err := parseConfigStoreEntriesFromFormationBundle(fb, bundlePath)
+	if err != nil {
+		return err
+	}
+
+	err = uploadConfigStoreRecords(configStoreRecords, account, stack, formation)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func parseConfigStoreEntriesFromFormationBundle(fb *cloud66.FormationBundle, bundlePath string) (*cloud66.BundledConfigStoreRecords, error) {
+	configStoreRecordArray := make([]cloud66.BundledConfigStoreRecord, 0)
+	for _, fileName := range fb.ConfigStore {
+		configStoreRecords, err := parseConfigStoreEntriesFromFile(filepath.Join(bundlePath, configstoreDirectoryName, fileName))
+		if err != nil {
+			return nil, err
+		}
+		// NOTE: this may give you records with duplicate keys
+		configStoreRecordArray = append(configStoreRecordArray, configStoreRecords.Records...)
+	}
+
+	result := cloud66.BundledConfigStoreRecords{Records: configStoreRecordArray}
+	return &result, nil
+}
+
+func parseConfigStoreEntriesFromFile(filePath string) (*cloud66.BundledConfigStoreRecords, error) {
+	marshalledResult, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var unmarshalledResult cloud66.BundledConfigStoreRecords
+	err = yaml.Unmarshal(marshalledResult, &unmarshalledResult)
+	if err != nil {
+		return nil, err
+	}
+
+	return &unmarshalledResult, nil
+}
+
+func uploadConfigStoreRecords(configStoreRecords *cloud66.BundledConfigStoreRecords, account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation) error {
+	for _, record := range configStoreRecords.Records {
+		var namespace string
+		switch record.Scope {
+		case cloud66.BundledConfigStoreAccountScope:
+			namespace = account.ConfigStoreNamespace
+		case cloud66.BundledConfigStoreStackScope:
+			namespace = stack.ConfigStoreNamespace
+		default:
+			return fmt.Errorf("ConfigStore record scope %s is not supported. Supported values are: %s, %s.", record.Scope, cloud66.BundledConfigStoreAccountScope, cloud66.BundledConfigStoreStackScope)
+		}
+
+		_, err := client.CreateConfigStoreRecord(namespace, &record.ConfigStoreRecord)
+		if err != nil {
+			if strings.Contains(err.Error(), "Duplicate entry") {
+				fmt.Printf("Failed to add the %s ConfigStore record because it already exists\n", record.Key)
+			} else {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func downloadBundledConfigStoreRecords(account *cloud66.Account, stack *cloud66.Stack, formation *cloud66.Formation) (*cloud66.BundledConfigStoreRecords, error) {
+	allRecords := make([]cloud66.BundledConfigStoreRecord, 0)
+
+	accountRecords, err := client.GetConfigStoreRecords(account.ConfigStoreNamespace)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range accountRecords {
+		allRecords = append(allRecords, cloud66.BundledConfigStoreRecord{ConfigStoreRecord: record, Scope: cloud66.BundledConfigStoreAccountScope})
+	}
+
+	stackRecords, err := client.GetConfigStoreRecords(stack.ConfigStoreNamespace)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range stackRecords {
+		allRecords = append(allRecords, cloud66.BundledConfigStoreRecord{ConfigStoreRecord: record, Scope: cloud66.BundledConfigStoreStackScope})
+	}
+
+	result := cloud66.BundledConfigStoreRecords{Records: allRecords}
+	return &result, nil
+}
+
+func saveBundledConfigStoreRecords(bundledConfigStoreRecords *cloud66.BundledConfigStoreRecords, filepath string) error {
+	marshalledOutput, err := yaml.Marshal(&bundledConfigStoreRecords)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(filepath, marshalledOutput, 0600)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -1138,12 +1707,12 @@ func uploadStencilGroups(fb *cloud66.FormationBundle, formation *cloud66.Formati
 	return nil
 }
 
-func getTemplateList(fb *cloud66.FormationBundle) []*cloud66.BaseTemplate{
+func getTemplateList(fb *cloud66.FormationBundle) []*cloud66.BaseTemplate {
 	btrs := make([]*cloud66.BaseTemplate, 0)
 	for _, value := range fb.BaseTemplates {
 		btrs = append(btrs, &cloud66.BaseTemplate{
-			Name: value.Name,
-			GitRepo: value.Repo,
+			Name:      value.Name,
+			GitRepo:   value.Repo,
 			GitBranch: value.Branch,
 		})
 

@@ -1,6 +1,9 @@
 package cloud66
 
-import "time"
+import (
+	"encoding/base64"
+	"time"
+)
 
 type Stencil struct {
 	Uid              string    `json:"uid"`
@@ -49,4 +52,56 @@ func (c *Client) AddStencils(stackUid string, formationUid string, baseTemplateU
 		}
 	}
 	return stencilRes, nil
+}
+
+func (c *Client) RenderStencil(stackUID, snapshotUID, formationUID, stencilUID string, body []byte) (*Renders, error) {
+	encoded := base64.StdEncoding.EncodeToString(body)
+	params := struct {
+		Body        string `json:"body"`
+		SnapshotUID string `json:"snapshot_id"`
+	}{
+		SnapshotUID: snapshotUID,
+		Body:        encoded,
+	}
+
+	var result *Renders
+	req, err := c.NewRequest("POST", "/stacks/"+stackUID+"/formations/"+formationUID+"/stencils/"+stencilUID+"/render.json", params, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	result = nil
+	err = c.DoReq(req, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (c *Client) UpdateStencil(stackUID, formationUID, stencilUID, message string, body []byte) (*Stencil, error) {
+	encoded := base64.StdEncoding.EncodeToString(body)
+	params := struct {
+		Body    string `json:"body"`
+		Message string `json:"message"`
+	}{
+		Message: message,
+		Body:    encoded,
+	}
+
+	var result *Stencil
+	req, err := c.NewRequest("PUT", "/stacks/"+stackUID+"/formations/"+formationUID+"/stencils/"+stencilUID+".json", params, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	result = nil
+	err = c.DoReq(req, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
