@@ -269,6 +269,14 @@ $ cx formations stencils list --formation bar
 							Name:  "watch",
 							Usage: "Watches the file or the folder for changes and renders every time there is a new change",
 						},
+						cli.BoolFlag{
+							Name:  "ignore-errors",
+							Usage: "if set, it will return anything that can be rendered and ignores the errors",
+						},
+						cli.BoolFlag{
+							Name:  "ignore-warnings",
+							Usage: "if set, it will return anything that can be rendered and ignores the warnings",
+						},
 					},
 				},
 				{
@@ -490,6 +498,8 @@ func runFetchFormation(c *cli.Context) {
 			} else {
 				write = true
 			}
+		} else {
+			write = true
 		}
 
 		if write {
@@ -903,6 +913,8 @@ func runRenderStencil(c *cli.Context) {
 	snapshotID := c.String("snapshot")
 	stdout := (output == "")
 	watch := c.Bool("watch")
+	ignoreWarnings := c.Bool("ignore-warnings")
+	ignoreErrors := c.Bool("ignore-errors")
 
 	if watch && stdout {
 		printFatal("Cannot use --watch without --output")
@@ -943,7 +955,7 @@ func runRenderStencil(c *cli.Context) {
 			fmt.Printf("Rendering %s to %s\n", file, output)
 		}
 		// output filename is sequenced if provided. otherwise, it's concatenated
-		renderStencil(stencil, formationName, stack, output, snapshotID)
+		renderStencil(stencil, formationName, stack, output, snapshotID, ignoreWarnings, ignoreErrors)
 	}
 
 	if watch {
@@ -968,7 +980,7 @@ func runRenderStencil(c *cli.Context) {
 						changedFile := filepath.Base(event.Name)
 						output := filepath.Join(outdir, changedFile)
 						fmt.Printf("Rendering %s to %s\n", changedFile, output)
-						renderStencil(event.Name, formationName, stack, output, snapshotID)
+						renderStencil(event.Name, formationName, stack, output, snapshotID, ignoreWarnings, ignoreErrors)
 					}
 				case err, ok := <-watcher.Errors:
 					if !ok {
@@ -989,7 +1001,7 @@ func runRenderStencil(c *cli.Context) {
 	}
 }
 
-func renderStencil(stencilFilename string, formationName string, stack *cloud66.Stack, output string, snapshotID string) {
+func renderStencil(stencilFilename string, formationName string, stack *cloud66.Stack, output string, snapshotID string, ignoreWarnings bool, ignoreErrors bool) {
 	if does, _ := fileExists(stencilFilename); !does {
 		printFatal("Cannot find %s", stencilFilename)
 	}
@@ -1056,7 +1068,9 @@ func renderStencil(stencilFilename string, formationName string, stack *cloud66.
 			fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("\t%s in %s\n", renderError.Text, renderError.Stencil), "red+h"))
 		}
 
-		return
+		if !ignoreErrors {
+			return
+		}
 	}
 
 	foundWarnings := renders.Warnings()
@@ -1066,7 +1080,9 @@ func renderStencil(stencilFilename string, formationName string, stack *cloud66.
 			fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("\t%s in %s\n", renderError.Text, renderError.Stencil), "yellow"))
 		}
 
-		return
+		if !ignoreWarnings {
+			return
+		}
 	}
 
 	// content
