@@ -48,3 +48,7 @@
 [[constraint]]
   name = "gopkg.in/go-yaml/yaml.v2"
   version = "2.2.2"
+
+[[constraint]]
+  name = "github.com/getsentry/sentry-go"
+  version = "0.1.3"
