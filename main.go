@@ -95,7 +95,7 @@ func main() {
 	commands = populateAliases(commands)
 
 	setupSentry()
-	defer sentry.Recover()
+	defer recoverFromPanic()
 
 	app := cli.NewApp()
 
@@ -368,6 +368,23 @@ func setupSentry() {
 			scope.SetTag("Architecture", runtime.GOARCH)
 			scope.SetTag("goversion", runtime.Version())
 		})
+	}
+}
+
+func recoverFromPanic() {
+	// NOTE: we shouldn't really be doing this because sentry has a built-in function sentry.Recover() that handles all this logic for you
+	// NOTE: unfortunately, it doesn't currently work! See https://github.com/getsentry/sentry-go/issues/30
+	// NOTE: once fixed, we can just call defer sentry.Recover() from main
+	if err := recover(); err != nil {
+		if err, ok := err.(error); ok {
+			sentry.CaptureException(err)
+			sentry.Flush(time.Second * 10)
+		}
+
+		if err, ok := err.(string); ok {
+			sentry.CaptureException(errors.New(err))
+			sentry.Flush(time.Second * 10)
+		}
 	}
 }
 
