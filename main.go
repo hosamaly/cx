@@ -17,7 +17,7 @@ import (
 
 	"github.com/cloud66-oss/cloud66"
 	"github.com/cloud66/cli"
-	"github.com/getsentry/raven-go"
+	"github.com/getsentry/sentry-go"
 )
 
 type Command struct {
@@ -94,8 +94,8 @@ func main() {
 	// add aliases for commands
 	commands = populateAliases(commands)
 
-	raven.SetDSN("https://39c187859231424fb4865e90d42a29a3:cfbc35db1b954f04be995a3d0ec3fbae@sentry.io/153008")
-	defer recoverPanic()
+	setupSentry()
+	defer sentry.Recover()
 
 	app := cli.NewApp()
 
@@ -351,17 +351,23 @@ func createDirIfNotExist(dir string) error {
 	return nil
 }
 
-func recoverPanic() {
+func setupSentry() {
 	if VERSION != "dev" {
-		raven.CapturePanicAndWait(func() {
-			if rec := recover(); rec != nil {
-				panic(rec)
-			}
-		}, map[string]string{
-			"Version":      VERSION,
-			"Platform":     runtime.GOOS,
-			"Architecture": runtime.GOARCH,
-			"goversion":    runtime.Version()})
+		err := sentry.Init(sentry.ClientOptions{
+			Dsn: "https://39c187859231424fb4865e90d42a29a3@sentry.io/153008",
+		})
+
+		if err != nil {
+			fmt.Printf("Sentry initialization failed: %v\n", err)
+			return
+		}
+
+		sentry.ConfigureScope(func(scope *sentry.Scope) {
+			scope.SetTag("Version", VERSION)
+			scope.SetTag("Platform", runtime.GOOS)
+			scope.SetTag("Architecture", runtime.GOARCH)
+			scope.SetTag("goversion", runtime.Version())
+		})
 	}
 }
 
