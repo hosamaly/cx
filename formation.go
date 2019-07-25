@@ -997,6 +997,10 @@ func runRenderStencil(c *cli.Context) {
 		os.MkdirAll(outdir, os.ModePerm)
 	}
 
+	if len(filesToRender) == 0 {
+		printFatal("No files found to render")
+	}
+
 	for _, stencil := range filesToRender {
 		file := filepath.Base(stencil)
 		if stencilFolder != "" {
