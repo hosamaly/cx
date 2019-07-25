@@ -22,9 +22,34 @@ import (
 	"github.com/cloud66-oss/cloud66"
 	"github.com/cloud66-oss/cx/term"
 	"github.com/mgutz/ansi"
+	"gopkg.in/go-yaml/yaml.v2"
 )
 
 var lastCommandExecuted *exec.Cmd
+
+// dotYaml represents the .cx.yml file
+type dotYamlData struct {
+	Args map[string]string `yaml:"args,omitempty"`
+}
+
+func (b *dotYamlData) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	return unmarshal(&b.Args)
+}
+
+func readDotYamlFile(path string) (*dotYamlData, error) {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var t *dotYamlData
+	err = yaml.Unmarshal(data, &t)
+	if err != nil {
+		return nil, err
+	}
+
+	return t, err
+}
 
 func cxHome() string {
 	return filepath.Join(homePath(), ".cloud66")

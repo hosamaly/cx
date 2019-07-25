@@ -947,9 +947,9 @@ func runListStencils(c *cli.Context) {
 func runRenderStencil(c *cli.Context) {
 	stack := mustStack(c)
 
-	formationName := c.String("formation")
+	formationName := getArgument(c, "formation")
 	if formationName == "" {
-		printFatal("No formation provided. Please use --formation to specify a formation")
+		printFatal("No formation provided. Please use --formation or use .cx.yml to specify a formation")
 	}
 
 	stencilFolder := c.String("stencil-folder")
@@ -962,7 +962,7 @@ func runRenderStencil(c *cli.Context) {
 	}
 
 	output := c.String("output")
-	snapshotID := c.String("snapshot")
+	snapshotID := getArgument(c, "snapshot")
 	stdout := (output == "")
 	watch := c.Bool("watch")
 	ignoreWarnings := c.Bool("ignore-warnings")
