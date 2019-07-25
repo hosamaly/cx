@@ -962,7 +962,7 @@ func runRenderStencil(c *cli.Context) {
 	}
 
 	output := c.String("output")
-	snapshotID := getArgument(c, "snapshot")
+	snapshotIDParam := getArgument(c, "snapshot")
 	stdout := (output == "")
 	watch := c.Bool("watch")
 	ignoreWarnings := c.Bool("ignore-warnings")
@@ -983,6 +983,35 @@ func runRenderStencil(c *cli.Context) {
 		}
 	} else {
 		filesToRender = append(filesToRender, stencilFilename)
+	}
+
+	// find the snapshot
+	var snapshotUID string
+	if snapshotIDParam == "" || snapshotIDParam == "latest" {
+		snapshots, err := client.Snapshots(stack.Uid)
+		must(err)
+		sort.Sort(snapshotsByDate(snapshots))
+		if len(snapshots) == 0 {
+			printFatal("No snapshots found")
+		}
+
+		snapshotUID = snapshots[0].Uid
+	} else {
+		snapshotUID = snapshotIDParam
+	}
+
+	var formations []cloud66.Formation
+	var err error
+	var formation *cloud66.Formation
+	formations, err = client.Formations(stack.Uid, false)
+	must(err)
+	for idx, f := range formations {
+		if f.Name == formationName {
+			formation = &formations[idx]
+		}
+	}
+	if formation == nil {
+		printFatal("No formation named '%s' found", formationName)
 	}
 
 	var outdir string
@@ -1007,11 +1036,8 @@ func runRenderStencil(c *cli.Context) {
 			output = filepath.Join(outdir, file)
 		}
 
-		if !stdout {
-			fmt.Printf("[%s] Rendering %s to %s\n", formationName, file, output)
-		}
 		// output filename is sequenced if provided. otherwise, it's concatenated
-		renderStencil(stencil, formationName, stack, output, snapshotID, ignoreWarnings, ignoreErrors)
+		renderStencil(stencil, formation, stack, output, snapshotUID, ignoreWarnings, ignoreErrors)
 	}
 
 	if watch {
@@ -1035,8 +1061,7 @@ func runRenderStencil(c *cli.Context) {
 					if event.Op&fsnotify.Write == fsnotify.Write {
 						changedFile := filepath.Base(event.Name)
 						output := filepath.Join(outdir, changedFile)
-						fmt.Printf("[%s] Rendering %s to %s\n", formationName, changedFile, output)
-						renderStencil(event.Name, formationName, stack, output, snapshotID, ignoreWarnings, ignoreErrors)
+						renderStencil(event.Name, formation, stack, output, snapshotUID, ignoreWarnings, ignoreErrors)
 					}
 				case err, ok := <-watcher.Errors:
 					if !ok {
@@ -1057,54 +1082,39 @@ func runRenderStencil(c *cli.Context) {
 	}
 }
 
-func renderStencil(stencilFilename string, formationName string, stack *cloud66.Stack, output string, snapshotID string, ignoreWarnings bool, ignoreErrors bool) {
+func renderStencil(stencilFilename string,
+	formation *cloud66.Formation,
+	stack *cloud66.Stack,
+	output string,
+	snapshotUID string,
+	ignoreWarnings bool,
+	ignoreErrors bool) {
+
 	if does, _ := fileExists(stencilFilename); !does {
 		printFatal("Cannot find %s", stencilFilename)
 	}
 	// find the file. it should exist
 	stencilName := filepath.Base(stencilFilename)
 
-	// find the snapshot
-	var snapshotUID string
-	if snapshotID == "" || snapshotID == "latest" {
-		snapshots, err := client.Snapshots(stack.Uid)
-		must(err)
-		sort.Sort(snapshotsByDate(snapshots))
-		if len(snapshots) == 0 {
-			printFatal("No snapshots found")
-		}
-
-		snapshotUID = snapshots[0].Uid
-	} else {
-		snapshotUID = snapshotID
+	// we can't render inlines for now
+	if strings.HasPrefix(stencilName, "_") {
+		return
 	}
-
-	var formations []cloud66.Formation
-	var err error
-	formations, err = client.Formations(stack.Uid, false)
-	must(err)
 
 	stencilUID := ""
-	formationUID := ""
 
-	for _, formation := range formations {
-		if formation.Name == formationName {
-			formationUID = formation.Uid
-			for _, stencil := range formation.Stencils {
-				if stencil.Filename == stencilName {
-					// we have the stencil get the ID
-					stencilUID = stencil.Uid
-				}
-			}
-
-			if stencilUID == "" {
-				printFatal("No stencil named '%s' found", stencilName)
-			}
+	for _, stencil := range formation.Stencils {
+		if stencil.Filename == stencilName {
+			// we have the stencil get the ID
+			stencilUID = stencil.Uid
 		}
 	}
+	if stencilUID == "" {
+		printFatal("No stencil named '%s' found", stencilName)
+	}
 
-	if formationUID == "" {
-		printFatal("No formation named '%s' found", formationName)
+	if stencilUID == "" {
+		return
 	}
 
 	// Read file to byte slice
@@ -1113,8 +1123,27 @@ func renderStencil(stencilFilename string, formationName string, stack *cloud66.
 		printFatal("Failed to read %s: %s", stencilFilename, err.Error())
 	}
 
+	// check the checksum
+	if output != "" {
+		checksum := generateChecksum(body)
+		readChecksum, err := readMagicComment(output, "checksum")
+
+		if err != nil {
+			// ignore the error and carry on
+			fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("Failed to read the checksum: %s\n", err.Error()), "yellow"))
+		} else {
+			if checksum == readChecksum {
+				// they are equal. skip
+				fmt.Fprintf(os.Stdout, fmt.Sprintf("No change found in %s\n", output))
+				return
+			}
+		}
+
+		fmt.Printf("[%s] Rendering %s to %s\n", formation.Name, stencilFilename, output)
+	}
+
 	var renders *cloud66.Renders
-	renders, err = client.RenderStencil(stack.Uid, snapshotUID, formationUID, stencilUID, body)
+	renders, err = client.RenderStencil(stack.Uid, snapshotUID, formation.Uid, stencilUID, body)
 	must(err)
 
 	foundErrors := renders.Errors()
@@ -1143,15 +1172,19 @@ func renderStencil(stencilFilename string, formationName string, stack *cloud66.
 
 	// content
 	for _, v := range renders.Stencils {
+		content := v.Content
+		// add magic content
+		checksum := generateChecksum(body)
+		content = fmt.Sprintf("# cx.checksum: %s\n%s", checksum, content)
 		// to a file
 		if output != "" {
-			err = ioutil.WriteFile(output, []byte(v.Content), 0644)
+			err = ioutil.WriteFile(output, []byte(content), 0644)
 			if err != nil {
 				printFatal(err.Error())
 			}
 		} else {
 			// concatenate
-			fmt.Printf("%s---\n", v.Content)
+			fmt.Printf("%s---\n", content)
 		}
 	}
 }
