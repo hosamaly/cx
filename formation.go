@@ -1004,7 +1004,7 @@ func runRenderStencil(c *cli.Context) {
 		}
 
 		if !stdout {
-			fmt.Printf("Rendering %s to %s\n", file, output)
+			fmt.Printf("[%s] Rendering %s to %s\n", formationName, file, output)
 		}
 		// output filename is sequenced if provided. otherwise, it's concatenated
 		renderStencil(stencil, formationName, stack, output, snapshotID, ignoreWarnings, ignoreErrors)
@@ -1031,7 +1031,7 @@ func runRenderStencil(c *cli.Context) {
 					if event.Op&fsnotify.Write == fsnotify.Write {
 						changedFile := filepath.Base(event.Name)
 						output := filepath.Join(outdir, changedFile)
-						fmt.Printf("Rendering %s to %s\n", changedFile, output)
+						fmt.Printf("[%s] Rendering %s to %s\n", formationName, changedFile, output)
 						renderStencil(event.Name, formationName, stack, output, snapshotID, ignoreWarnings, ignoreErrors)
 					}
 				case err, ok := <-watcher.Errors:
