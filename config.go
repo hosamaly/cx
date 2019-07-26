@@ -372,6 +372,8 @@ func runUpdateConfig(c *cli.Context) {
 		Organization: org,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
+		Name:         name,
+		TokenFile:    fmt.Sprintf("cx_%s.json", strings.ToLower(name)),
 	}
 
 	profiles.Profiles[name] = newProfile
