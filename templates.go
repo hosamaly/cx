@@ -1,10 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"text/tabwriter"
 
 	"github.com/cloud66-oss/cloud66"
@@ -29,11 +29,22 @@ func buildTemplates() cli.Command {
 			Description: `
 
 Examples:
-$ cx --org='My Awesome Organization' templates list
-Name                          Uid                                  Git Repository                                           Git Branch  Status
-First Awesome Repository      bt-2e0810a17c33ab35d7970ff330b1f916  git@github.com:AwesomeOrganization/awesome-stencils.git  test        Available
-Second Awesome Repository     bt-e2e869ee6ce97ee58a17aa264bed1e0c  git@github.com:AwesomeOrganization/better-stencils.git   test        Available
+$ cx templates list
+Name                          Short Name 				Uid                                  Git Repository                                           Git Branch  Status
+First Awesome Repository      first-awesome-repo		bt-2e0810a17c33ab35d7970ff330b1f916  git@github.com:AwesomeOrganization/awesome-stencils.git  test        Available
+Second Awesome Repository     second-awesome-repo 		bt-e2e869ee6ce97ee58a17aa264bed1e0c  git@github.com:AwesomeOrganization/better-stencils.git   test        Available
 `,
+		},
+		cli.Command{
+			Name:   "show",
+			Usage:  "shows a single template repository and its stencils",
+			Action: runShowBTR,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "name,n",
+					Usage: "name of the template repository",
+				},
+			},
 		},
 		cli.Command{
 			Name:  "resync",
@@ -48,7 +59,7 @@ Second Awesome Repository     bt-e2e869ee6ce97ee58a17aa264bed1e0c  git@github.co
 			Description: `
 
 Examples:
-$ cx --org='My Awesome Organization' templates resync --template='bt-2e0810a17c33ab35d7970ff330b1f916'
+$ cx templates resync --template='bt-2e0810a17c33ab35d7970ff330b1f916'
 `,
 		},
 	}
@@ -68,6 +79,34 @@ func runListTemplates(c *cli.Context) {
 	defer w.Flush()
 
 	printBaseTemplates(w, baseTemplates)
+}
+
+func runShowBTR(c *cli.Context) {
+	mustOrg(c)
+
+	btrName := c.String("name")
+	if btrName == "" {
+		printFatal("No base template name given. Please use --name")
+	}
+
+	btrs, err := client.ListBaseTemplates()
+	if err != nil {
+		printFatal(err.Error())
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 1, 2, 2, ' ', 0)
+	defer w.Flush()
+
+	for _, btr := range btrs {
+		if btr.Name == btrName {
+			fullBTR, err := client.GetBaseTemplate(btr.Uid, true, false)
+			if err != nil {
+				printFatal(err.Error())
+			}
+
+			printStencilTemplateList(w, fullBTR.Stencils)
+		}
+	}
 }
 
 func runResyncTemplate(c *cli.Context) {
@@ -114,6 +153,7 @@ func printBaseTemplate(w io.Writer, baseTemplate *cloud66.BaseTemplate) {
 func printBaseTemplateHeader(w io.Writer) {
 	listRec(w,
 		"Name",
+		"ShortName",
 		"Uid",
 		"Git Repository",
 		"Git Branch",
@@ -124,6 +164,7 @@ func printBaseTemplateHeader(w io.Writer) {
 func printBaseTemplateRow(w io.Writer, baseTemplate *cloud66.BaseTemplate) {
 	listRec(w,
 		baseTemplate.Name,
+		baseTemplate.ShortName,
 		baseTemplate.Uid,
 		baseTemplate.GitRepo,
 		baseTemplate.GitBranch,
@@ -138,5 +179,42 @@ func getBaseTemplateIndexByUID(baseTemplates []cloud66.BaseTemplate, baseTemplat
 		}
 	}
 
-	return -1, errors.New(fmt.Sprintf("Could not find template repository with UID %s.", baseTemplateUID))
+	return -1, fmt.Errorf("Could not find template repository with UID %s.", baseTemplateUID)
 }
+
+func listStencilTemplate(w io.Writer, a cloud66.StencilTemplate) {
+	listRec(w,
+		a.Filename,
+		a.Name,
+		a.FilenamePattern,
+		a.Description,
+		a.ContextType,
+		a.Tags,
+		a.PreferredSequence,
+	)
+}
+
+func printStencilTemplateList(w io.Writer, stencils []cloud66.StencilTemplate) {
+	sort.Sort(stencilTemplateByFilename(stencils))
+
+	listRec(w,
+		"FILENAME",
+		"NAME",
+		"PATTERN",
+		"DESCRIPTION",
+		"CONTEXT TYPE",
+		"TAGS",
+		"PREFERRED SEQUENCE")
+
+	for _, a := range stencils {
+		if a.Name != "" {
+			listStencilTemplate(w, a)
+		}
+	}
+}
+
+type stencilTemplateByFilename []cloud66.StencilTemplate
+
+func (a stencilTemplateByFilename) Len() int           { return len(a) }
+func (a stencilTemplateByFilename) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a stencilTemplateByFilename) Less(i, j int) bool { return a[i].Filename < a[j].Filename }
