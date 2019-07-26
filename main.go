@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -45,6 +46,7 @@ var (
 	BUILD_DATE      string = ""
 	selectedProfile *Profile
 	profilePath     string
+	dotYaml         *dotYamlData
 )
 
 var commands = []*Command{
@@ -218,7 +220,7 @@ func beforeCommand(c *cli.Context) error {
 		return fmt.Errorf("no profile named %s found", profileName)
 	}
 
-	if (command != "version") && (command != "help") && (command != "update") && (command != "test") {
+	if (command != "version") && (command != "help") && (command != "update") && (command != "test") && (command != "config") {
 		initClients(c, true)
 	}
 
@@ -229,7 +231,12 @@ func beforeCommand(c *cli.Context) error {
 	if (command != "update") && (VERSION != "dev") {
 		defer backgroundRun()
 	}
+	dir, err := os.Getwd()
+	if err != nil {
+		printFatal(err.Error())
+	}
 
+	dotYaml, _ = readDotYamlFile(path.Join(dir, ".cx.yml"))
 	return nil
 }
 
@@ -427,7 +434,8 @@ func stack(c *cli.Context) (*cloud66.Stack, error) {
 	}
 
 	var err error
-	if c.String("stack") != "" {
+	stackArg := getArgument(c, "stack")
+	if stackArg != "" {
 		stacks, err := client.StackListWithFilter(filterByEnvironmentExact)
 		if err != nil {
 			return nil, err
@@ -436,7 +444,7 @@ func stack(c *cli.Context) (*cloud66.Stack, error) {
 		for _, stack := range stacks {
 			stackNames = append(stackNames, stack.Name)
 		}
-		idx, err := fuzzyFind(stackNames, c.String("stack"), false)
+		idx, err := fuzzyFind(stackNames, stackArg, false)
 		if err != nil {
 			// try fuzzy env match
 			stacks, err = client.StackListWithFilter(filterByEnvironmentFuzzy)
@@ -447,7 +455,7 @@ func stack(c *cli.Context) (*cloud66.Stack, error) {
 			for _, stack := range stacks {
 				stackFuzzNames = append(stackFuzzNames, stack.Name)
 			}
-			idx, err = fuzzyFind(stackFuzzNames, c.String("stack"), false)
+			idx, err = fuzzyFind(stackFuzzNames, stackArg, false)
 			if err != nil {
 				return nil, err
 			}
@@ -479,10 +487,23 @@ func mustStack(c *cli.Context) *cloud66.Stack {
 	}
 
 	if stack == nil {
-		printFatal("No stack specified. Either use --stack flag to cd to a stack directory")
+		printFatal("No stack specified. Either use --stack flag, .cx.yml file or cd to a stack directory")
 	}
 
 	return stack
+}
+
+// returns the value of an argument based on what's given in the cli or the .cx.yml file
+func getArgument(c *cli.Context, arg string) string {
+	if c.String(arg) != "" {
+		return c.String(arg)
+	}
+
+	if dotYaml != nil && dotYaml.Args[arg] != "" {
+		return dotYaml.Args[arg]
+	}
+
+	return ""
 }
 
 func mustServer(c *cli.Context, stack cloud66.Stack, flagServer string, ignoreDocker bool) *cloud66.Server {
