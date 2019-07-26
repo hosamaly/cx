@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"log"
@@ -22,9 +23,70 @@ import (
 	"github.com/cloud66-oss/cloud66"
 	"github.com/cloud66-oss/cx/term"
 	"github.com/mgutz/ansi"
+	"gopkg.in/go-yaml/yaml.v2"
 )
 
-var lastCommandExecuted *exec.Cmd
+var (
+	lastCommandExecuted *exec.Cmd
+	magicComment        *regexp.Regexp
+	crc32t              *crc32.Table
+)
+
+func init() {
+	magicComment = regexp.MustCompile(`#[ \t]*cx\.(\w+):[ \t]*(.*)`)
+	crc32t = crc32.MakeTable(0xEDB88320)
+}
+
+// dotYaml represents the .cx.yml file
+type dotYamlData struct {
+	Args map[string]string `yaml:"args,omitempty"`
+}
+
+func (b *dotYamlData) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	return unmarshal(&b.Args)
+}
+
+func readDotYamlFile(path string) (*dotYamlData, error) {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var t *dotYamlData
+	err = yaml.Unmarshal(data, &t)
+	if err != nil {
+		return nil, err
+	}
+
+	return t, err
+}
+
+func generateChecksum(data []byte) string {
+	return fmt.Sprintf("%x", crc32.Checksum(data, crc32t))
+}
+
+// reads the checksum value from the top of the file with magic comment
+// #cx.xxxxx: yyyyy
+// this doesn't check if there are multiple magic comments of the same type and picks up the first one
+func readMagicComment(filename string, comment string) (string, error) {
+	if does, _ := fileExists(filename); !does {
+		return "FILE_MISSING", nil
+	}
+
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return "READ_ERROR", err
+	}
+
+	matches := magicComment.FindAllSubmatch(data, -1)
+	for idx := range matches {
+		if string(matches[idx][1]) == comment {
+			return string(matches[idx][2]), nil
+		}
+	}
+
+	return "NO_MATCH", nil
+}
 
 func cxHome() string {
 	return filepath.Join(homePath(), ".cloud66")
