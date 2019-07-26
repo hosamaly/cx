@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/cloud66-oss/cloud66"
 	"github.com/cloud66/cli"
@@ -215,6 +216,10 @@ func runRenderStencil(c *cli.Context) {
 			printFatal("Failed to fetch all files from folder %s: %s", stencilFolder, err.Error())
 		}
 		for _, file := range fileList {
+			if file.Name() == ".pause" {
+				continue
+			}
+
 			filesToRender = append(filesToRender, filepath.Join(stencilFolder, file.Name()))
 		}
 	} else {
@@ -236,19 +241,8 @@ func runRenderStencil(c *cli.Context) {
 		snapshotUID = snapshotIDParam
 	}
 
-	var formations []cloud66.Formation
-	var err error
-	var formation *cloud66.Formation
-	formations, err = client.Formations(stack.Uid, false)
+	formation, err := loadFormation(stack, formationName)
 	must(err)
-	for idx, f := range formations {
-		if f.Name == formationName {
-			formation = &formations[idx]
-		}
-	}
-	if formation == nil {
-		printFatal("No formation named '%s' found", formationName)
-	}
 
 	var outdir string
 	// if output is defined, then make sure we have a folder for it
@@ -285,7 +279,16 @@ func runRenderStencil(c *cli.Context) {
 
 		done := make(chan bool)
 
-		fmt.Println("Watching for changes...")
+		paused := false
+		if does, _ := fileExists(filepath.Join(stencilFolder, ".pause")); does {
+			paused = true
+		}
+
+		if paused {
+			fmt.Println("Watching is paused...")
+		} else {
+			fmt.Println("Watching for changes...")
+		}
 
 		go func() {
 			for {
@@ -294,10 +297,43 @@ func runRenderStencil(c *cli.Context) {
 					if !ok {
 						return
 					}
+
+					if event.Op&fsnotify.Remove == fsnotify.Remove {
+						if filepath.Base(event.Name) == ".pause" {
+							fmt.Fprintln(os.Stderr, "Resuming watch...")
+							paused = false
+						}
+					}
+
+					if paused {
+						continue
+					}
+
 					if event.Op&fsnotify.Write == fsnotify.Write {
+						// file modified
 						changedFile := filepath.Base(event.Name)
 						output := filepath.Join(outdir, changedFile)
 						renderStencil(event.Name, formation, stack, output, snapshotUID, ignoreWarnings, ignoreErrors)
+					}
+					if event.Op&fsnotify.Create == fsnotify.Create {
+						if filepath.Base(event.Name) == ".pause" {
+							fmt.Fprintln(os.Stderr, "Watch paused")
+							paused = true
+							continue
+						}
+
+						// new file added
+						newFile := filepath.Base(event.Name)
+						output := filepath.Join(outdir, newFile)
+
+						fmt.Fprintf(os.Stderr, "New file %s found. Reloading stencil list\n", newFile)
+
+						// we're going to wait for a few seconds before rendering
+						time.Sleep(10 * time.Second)
+						formation, _ = loadFormation(stack, formation.Name)
+
+						renderStencil(event.Name, formation, stack, output, snapshotUID, ignoreWarnings, ignoreErrors)
+						watcher.Add(event.Name)
 					}
 				case err, ok := <-watcher.Errors:
 					if !ok {
@@ -314,8 +350,29 @@ func runRenderStencil(c *cli.Context) {
 				printFatal("Failed to add a watch for %s: %s", file, err.Error())
 			}
 		}
+		if stencilFolder != "" {
+			watcher.Add(stencilFolder)
+		}
+
 		<-done
 	}
+}
+
+func loadFormation(stack *cloud66.Stack, formationName string) (*cloud66.Formation, error) {
+	var formations []cloud66.Formation
+	var err error
+	formations, err = client.Formations(stack.Uid, false)
+	if err != nil {
+		return nil, err
+	}
+	must(err)
+	for idx, f := range formations {
+		if f.Name == formationName {
+			return &formations[idx], nil
+		}
+	}
+
+	return nil, fmt.Errorf("No formation with name %s found", formationName)
 }
 
 func renderStencil(stencilFilename string,
@@ -346,7 +403,8 @@ func renderStencil(stencilFilename string,
 		}
 	}
 	if stencilUID == "" {
-		printFatal("No stencil named '%s' found", stencilName)
+		fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("No stencil named '%s' found\nIf this is a new stencil, you can try again once it's fully created in the Formation in a few seconds\n", stencilName), "red+h"))
+		return
 	}
 
 	if stencilUID == "" {
@@ -357,6 +415,12 @@ func renderStencil(stencilFilename string,
 	body, err := ioutil.ReadFile(stencilFilename)
 	if err != nil {
 		printFatal("Failed to read %s: %s", stencilFilename, err.Error())
+	}
+
+	// skip if the file is empty
+	if len(body) == 0 {
+		fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("File %s is empty\n", stencilFilename), "yellow"))
+		return
 	}
 
 	// check the checksum
