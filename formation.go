@@ -352,13 +352,22 @@ func runFetchFormation(c *cli.Context) {
 		printFatal("Formation with name \"%v\" could not be found", formationName)
 	}
 
-	outDir := c.String("outdir")
+	outDir := getArgument(c, "outdir")
 	if outDir == "" {
 		printFatal("No output directory provided. Use outdir option")
 		cli.ShowSubcommandHelp(c)
 	}
 
-	stencilDir := filepath.Join(outDir, "stencils")
+	relativeStencilDir := filepath.Join(outDir, "stencils")
+	stencilDir, err := filepath.Abs(relativeStencilDir)
+	if err != nil {
+		printFatal(err.Error())
+	}
+	if !ask(fmt.Sprintf("Fetching formation to %s. y/N?", stencilDir), "y") {
+		fmt.Println("Exiting")
+		os.Exit(0)
+	}
+
 	if err := os.MkdirAll(stencilDir, os.ModePerm); err != nil {
 		printFatal("Unable to create directory %s: %s", outDir, err.Error())
 	}

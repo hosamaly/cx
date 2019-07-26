@@ -299,7 +299,8 @@ func runRenderStencil(c *cli.Context) {
 					}
 
 					if event.Op&fsnotify.Remove == fsnotify.Remove {
-						if filepath.Base(event.Name) == ".pause" {
+						filename := filepath.Base(event.Name)
+						if filename == ".pause" {
 							fmt.Fprintln(os.Stderr, "Resuming watch...")
 							paused = false
 						}
