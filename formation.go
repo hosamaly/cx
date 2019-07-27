@@ -275,7 +275,7 @@ func runCommitFormation(c *cli.Context) {
 		printFatal("Formation with name \"%v\" could not be found", formationName)
 	}
 
-	dir := c.String("dir")
+	dir := getArgument(c, "dir")
 	stencilOption := c.String("stencil")
 	if dir == "" && stencilOption == "" {
 		printFatal("Either --dir or --stencil should be provided")
@@ -320,6 +320,15 @@ func runCommitFormation(c *cli.Context) {
 		if err != nil {
 			printFatal("Failed to read %s: %s", stencilName, err.Error())
 		}
+		// check to make it we're not pushing rendered files by mistake
+		checksum, _ := readMagicComment(stencilFile, "checksum")
+		if checksum != "" {
+			if !ask(fmt.Sprintf("Stencil %s contains a checksum which suggests it might be a rendered stencil. Are you sure you are committing the right file? (y/N)", stencilFile), "y") {
+				fmt.Println("Exiting")
+				os.Exit(0)
+			}
+		}
+
 		_, err = client.UpdateStencil(stack.Uid, formation.Uid, stencil.Uid, message, body)
 		if err != nil {
 			printFatal("Failed to commit %s: %s", stencilFile, err.Error())

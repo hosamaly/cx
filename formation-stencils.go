@@ -263,7 +263,7 @@ func runRenderStencil(c *cli.Context) {
 	for _, stencil := range filesToRender {
 		file := filepath.Base(stencil)
 		if stencilFolder != "" {
-			output = filepath.Join(outdir, file)
+			output = getRenderFilepath(outdir, file)
 		}
 
 		// output filename is sequenced if provided. otherwise, it's concatenated
@@ -313,7 +313,7 @@ func runRenderStencil(c *cli.Context) {
 					if event.Op&fsnotify.Write == fsnotify.Write {
 						// file modified
 						changedFile := filepath.Base(event.Name)
-						output := filepath.Join(outdir, changedFile)
+						output = getRenderFilepath(outdir, changedFile)
 						renderStencil(event.Name, formation, stack, output, snapshotUID, ignoreWarnings, ignoreErrors)
 					}
 					if event.Op&fsnotify.Create == fsnotify.Create {
@@ -325,7 +325,7 @@ func runRenderStencil(c *cli.Context) {
 
 						// new file added
 						newFile := filepath.Base(event.Name)
-						output := filepath.Join(outdir, newFile)
+						output = getRenderFilepath(outdir, newFile)
 
 						fmt.Fprintf(os.Stderr, "New file %s found. Reloading stencil list\n", newFile)
 
@@ -357,6 +357,15 @@ func runRenderStencil(c *cli.Context) {
 
 		<-done
 	}
+}
+
+// returns a full filename for the rendered stencil from the given stencil template name
+func getRenderFilepath(outdir string, stencilFilename string) string {
+	stencilBasename := filepath.Base(stencilFilename)
+	// we're doing this to make rendered filenames different from the stencil templates
+	// to avoid committing them by mistake
+	renderFilename := strings.ReplaceAll(stencilBasename, "@", "-")
+	return filepath.Join(outdir, renderFilename)
 }
 
 func loadFormation(stack *cloud66.Stack, formationName string) (*cloud66.Formation, error) {
