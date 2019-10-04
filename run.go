@@ -134,7 +134,7 @@ func runRun(c *cli.Context) {
 	if serviceName == "" && containerName == "" {
 		// this is a server level command
 		if userCommand == "" && !interactive {
-			printFatal("A command is required if you're not running an interactive sesssion")
+			printFatal("A command is required if you're not running an interactive session")
 		}
 		err = runServerCommand(*server, userCommand, interactive)
 		must(err)

@@ -2,20 +2,12 @@
 
 
 [[projects]]
-  digest = "1:48fe4883dedb04f1f8b4e1d49a49bfed93c3e1687036a05323a81b3b7c4554c7"
-  name = "github.com/certifi/gocertifi"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "03be5e6bb9874570ea7fb0961225d193cbc374c5"
-  version = "2017.01.23"
-
-[[projects]]
   branch = "master"
-  digest = "1:c339cec830c95b1e118304e406e87b0304feaac2e0a580a873b80e148162c688"
+  digest = "1:e157e2adae2ff2aa94ab428ccc1c9a395e9f886113bcadeed54811dc1a43e4c6"
   name = "github.com/cloud66-oss/cloud66"
   packages = ["."]
   pruneopts = "UT"
-  revision = "4b1b687d973ce8203bad1c9a1e60257e6d104275"
+  revision = "097c881659c9c8ed0e351cdedf6a2a72abac2187"
 
 [[projects]]
   branch = "master"
@@ -61,13 +53,6 @@
   pruneopts = "UT"
   revision = "c2828203cd70a50dcccfb2761f8b1f8ceef9a8e9"
   version = "v1.4.7"
-
-[[projects]]
-  digest = "1:e3bb035dd2ee60debfd83a746867a2b632165fb284620a56384250e882b3f4af"
-  name = "github.com/getsentry/raven-go"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "aff752b3f9b36599a3ab28ac36255bea069b440b"
 
 [[projects]]
   digest = "1:4c3c9b83dfee6f952cb3e6553480fe464f1af13167e2805605d3d62b01fe51b1"
@@ -284,7 +269,6 @@
     "github.com/cloud66/cli",
     "github.com/cloud66/wray",
     "github.com/fsnotify/fsnotify",
-    "github.com/getsentry/raven-go",
     "github.com/getsentry/sentry-go",
     "github.com/h2non/gock",
     "github.com/inconshreveable/go-update",
