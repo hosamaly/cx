@@ -1,7 +1,11 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +19,18 @@ var cmdConfig = &Command{
 	NeedsStack: false,
 	NeedsOrg:   false,
 	Short:      "configuration commands",
+}
+
+type configWrapper struct {
+	Response *cxConfig `json:"response"`
+}
+
+type cxConfig struct {
+	APIURI       string `json:"api_url"`
+	BaseURI      string `json:"base_url"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	FayeEndpoint string `json:"faye_endpoint"`
 }
 
 func buildConfig() cli.Command {
@@ -69,6 +85,10 @@ func buildConfig() cli.Command {
 				cli.StringFlag{
 					Name:  "faye-endpoint",
 					Usage: "URL for realtime push service. Used for OnPrem and Dedicated installations of Cloud 66 Enterprise",
+				},
+				cli.BoolFlag{
+					Name:  "auto",
+					Usage: "Tries to pull configuration from the server provided by base-url",
 				},
 			},
 			Description: `
@@ -237,6 +257,7 @@ func runCreateConfig(c *cli.Context) {
 	fayeEndpoint := c.String("faye-endpoint")
 	clientID := c.String("client-id")
 	clientSecret := c.String("client-secret")
+	auto := c.Bool("auto")
 
 	if apiURL == "" {
 		apiURL = defProfile.ApiURL
@@ -252,6 +273,18 @@ func runCreateConfig(c *cli.Context) {
 	}
 	if clientSecret == "" {
 		clientSecret = defProfile.ClientSecret
+	}
+
+	if auto {
+		config, err := getCxConfig(baseURL)
+		if err != nil {
+			printFatal(err.Error())
+		}
+
+		apiURL = config.APIURI
+		fayeEndpoint = config.FayeEndpoint
+		clientID = config.ClientID
+		clientSecret = config.ClientSecret
 	}
 
 	profile := &Profile{
@@ -403,4 +436,28 @@ func findProfile(profiles *Profiles, name string) *Profile {
 	printFatal("cannot find profile named %s", name)
 
 	return nil
+}
+
+func getCxConfig(entryPoint string) (*cxConfig, error) {
+	resp, err := http.Get(fmt.Sprintf("%s/api/tooling/cx/config", entryPoint))
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New(resp.Status)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var wrapper configWrapper
+	err = json.Unmarshal(body, &wrapper)
+	if err != nil {
+		return nil, err
+	}
+
+	return wrapper.Response, nil
 }
