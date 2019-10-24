@@ -84,6 +84,10 @@ $ cx formations stencils list --formation bar
 					Name:  "stencil-folder",
 					Usage: "Render all files within the folder. Cannot be used with stencil-file at the same time",
 				},
+				cli.BoolFlag{
+					Name:  "default-folders",
+					Usage: "When used, render will automatically create stencil and render folders in ~/cloud66/formations/...",
+				},
 				cli.StringFlag{
 					Name:  "snapshot",
 					Usage: "Snapshot ID. Default uses the latest snapshot",
@@ -189,16 +193,36 @@ func runRenderStencil(c *cli.Context) {
 		printFatal("No formation provided. Please use --formation or use .cx.yml to specify a formation")
 	}
 
+	autoFolders := c.Bool("default-folders")
+
 	stencilFolder := c.String("stencil-folder")
 	stencilFilename := c.String("stencil-file")
-	if stencilFilename == "" && stencilFolder == "" {
-		printFatal("No stencil file or folder provided. Please use --stencil-file or --stencil-folder to specify a stencil file or folder")
+	if stencilFilename == "" && stencilFolder == "" && !autoFolders {
+		printFatal("No stencil file or folder provided. Please use --stencil-file or --stencil-folder to specify a stencil file or folder. Alternatively you can use --default-folders")
 	}
 	if stencilFolder != "" && stencilFilename != "" {
 		printFatal("Both --stencil-file and --stencil-folder provided. Please use only one")
 	}
 
+	if autoFolders && (stencilFolder != "" || stencilFilename != "") {
+		printFatal("Both --stencil-file or --stencil-folder and default-folders used. Please use only one method to set the folders")
+	}
+
+	var err error
+	if autoFolders {
+		stencilFolder, err = defaultInputFolder(formationName)
+		if err != nil {
+			printFatal(err.Error())
+		}
+	}
+
 	output := c.String("output")
+	if autoFolders {
+		output, err = defaultOutputFolder(formationName)
+		if err != nil {
+			printFatal(err.Error())
+		}
+	}
 	snapshotIDParam := getArgument(c, "snapshot")
 	stdout := (output == "")
 	watch := c.Bool("watch")
@@ -209,6 +233,7 @@ func runRenderStencil(c *cli.Context) {
 		printFatal("Cannot use --watch without --output")
 	}
 
+	fmt.Printf("Stencils: %s\nRenders: %s\n", stencilFolder, output)
 	filesToRender := make([]string, 0)
 	if stencilFolder != "" {
 		fileList, err := ioutil.ReadDir(stencilFolder)
@@ -357,6 +382,27 @@ func runRenderStencil(c *cli.Context) {
 
 		<-done
 	}
+}
+
+func defaultOutputFolder(formationName string) (string, error) {
+	dir := filepath.Join(homePath(), "cloud66", "formations", formationName, "renders")
+	err := os.MkdirAll(dir, os.ModePerm)
+	if err != nil {
+		return "", err
+	}
+
+	return dir, nil
+}
+
+func defaultInputFolder(formationName string) (string, error) {
+	dir := filepath.Join(homePath(), "cloud66", "formations", formationName, "stencils")
+	err := os.MkdirAll(dir, os.ModePerm)
+	if err != nil {
+		return "", err
+	}
+
+	return dir, nil
+
 }
 
 // returns a full filename for the rendered stencil from the given stencil template name
