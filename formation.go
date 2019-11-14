@@ -135,6 +135,10 @@ $ cx formations list -s mystack foo bar // only show formations foo and bar
 					Usage: "[OPTIONAL, DEFAULT: true] use the snapshot's HEAD gitref (and not the ref stored in the for stencil)",
 				},
 				cli.StringFlag{
+					Name:  "workflow,w",
+					Usage: "[OPTIONAL] name of the workflow to use for the formation deployment",
+				},
+				cli.StringFlag{
 					Name:  "log-level",
 					Usage: "[OPTIONAL, DEFAULT: info] log level. Use debug to see process output",
 				},
@@ -445,7 +449,8 @@ func runDeployFormation(c *cli.Context) {
 		level = logrus.DebugLevel
 	}
 
-	workflowWrapper, err := client.GetWorkflow(stack.Uid, formation.Uid, snapshotUID, useLatest)
+	workflowName := getArgument(c, "workflow")
+	workflowWrapper, err := client.GetWorkflow(stack.Uid, formation.Uid, snapshotUID, useLatest, workflowName)
 	must(err)
 
 	ctx := context.Background()
@@ -624,6 +629,11 @@ func bundleFormation(formation *cloud66.Formation, bundleFile string, envVars []
 	if err != nil {
 		printFatal(err.Error())
 	}
+	workflowDir := filepath.Join(dir, "workflow")
+	err = os.MkdirAll(workflowDir, os.ModePerm)
+	if err != nil {
+		printFatal(err.Error())
+	}
 	configurationsDir := filepath.Join(dir, "configurations")
 	err = os.MkdirAll(configurationsDir, os.ModePerm)
 	if err != nil {
@@ -692,6 +702,19 @@ func bundleFormation(formation *cloud66.Formation, bundleFile string, envVars []
 		}
 
 		file.WriteString(transformation.Body)
+	}
+
+	// workflow
+	fmt.Println("Saving workflows...")
+	for _, workflow := range formation.Workflows {
+		fileName := filepath.Join(workflowDir, workflow.Name)
+		file, err := os.Create(fileName)
+		defer file.Close()
+		if err != nil {
+			printFatal(err.Error())
+		}
+
+		file.WriteString(workflow.Body)
 	}
 
 	// environment variables
@@ -911,6 +934,12 @@ func createAndUploadFormations(fb *cloud66.FormationBundle, formationName string
 
 	// add stencil groups
 	err = uploadStencilGroups(fb, formation, stack, bundlePath, message)
+	if err != nil {
+		printFatal(err.Error())
+	}
+
+	// add workflow
+	err = uploadWorkflows(fb, formation, stack, bundlePath, message)
 	if err != nil {
 		printFatal(err.Error())
 	}
@@ -1169,6 +1198,25 @@ func uploadStencilGroups(fb *cloud66.FormationBundle, formation *cloud66.Formati
 		return err
 	}
 	fmt.Println("Stencil Groups added")
+	return nil
+}
+
+func uploadWorkflows(fb *cloud66.FormationBundle, formation *cloud66.Formation, stack *cloud66.Stack, bundlePath string, message string) error {
+	fmt.Println("Adding workflow...")
+	for _, workflow := range fb.Workflows {
+
+		workflowItem, err := workflow.AsWorkflow(bundlePath)
+
+		if err != nil {
+			return err
+		}
+
+		_, err = client.AddWorkflow(stack.Uid, formation.Uid, workflowItem, message)
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Println("Workflows added")
 	return nil
 }
 
