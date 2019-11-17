@@ -964,11 +964,13 @@ func uploadStencils(baseTemplate *cloud66.BundleBaseTemplates, formation *cloud6
 		return errors.New("base template repository not found")
 
 	}
+
 	_, err = client.AddStencils(stack.Uid, formation.Uid, formation.BaseTemplates[btrIndex].Uid, stencils, message)
 	if err != nil {
 		return err
 	}
-	fmt.Println("Stencils added")
+
+	fmt.Println("Stencils are queued for addition")
 
 	return nil
 }
