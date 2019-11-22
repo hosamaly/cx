@@ -64,9 +64,9 @@ $ cx formations stencils list --formation bar
 			},
 		},
 		{
-			Name:   "render",
+			Name:   "render-local",
 			Usage:  "Renders a stencil based on the given content without committing it into the Formation git repository",
-			Action: runRenderStencil,
+			Action: runRenderLocalStencil,
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "formation",
@@ -99,6 +99,41 @@ $ cx formations stencils list --formation bar
 				cli.BoolFlag{
 					Name:  "watch",
 					Usage: "Watches the file or the folder for changes and renders every time there is a new change",
+				},
+				cli.BoolFlag{
+					Name:  "ignore-errors",
+					Usage: "if set, it will return anything that can be rendered and ignores the errors",
+				},
+				cli.BoolFlag{
+					Name:  "ignore-warnings",
+					Usage: "if set, it will return anything that can be rendered and ignores the warnings",
+				},
+			},
+		},
+		{
+			Name:   "render",
+			Usage:  "Renders a single stencil",
+			Action: runRenderStencil,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "formation",
+					Usage: "Specify the formation to use",
+				},
+				cli.StringFlag{
+					Name:  "stack,s",
+					Usage: "full or partial stack name. This can be omitted if the current directory is a stack directory",
+				},
+				cli.StringFlag{
+					Name:  "stencil-uuid",
+					Usage: "Stencil UUID",
+				},
+				cli.StringFlag{
+					Name:  "snapshot",
+					Usage: "Snapshot ID. Default uses the latest snapshot",
+				},
+				cli.StringFlag{
+					Name:  "output",
+					Usage: "Full file name and path to save the rendered stencil. If missing it will output to stdout",
 				},
 				cli.BoolFlag{
 					Name:  "ignore-errors",
@@ -186,6 +221,90 @@ func runListStencils(c *cli.Context) {
 }
 
 func runRenderStencil(c *cli.Context) {
+	stack := mustStack(c)
+
+	formationName := getArgument(c, "formation")
+	if formationName == "" {
+		printFatal("No formation provided. Please use --formation or use .cx.yml to specify a formation")
+	}
+
+	output := c.String("output")
+	snapshotIDParam := getArgument(c, "snapshot")
+	stdout := (output == "")
+	ignoreWarnings := c.Bool("ignore-warnings")
+	ignoreErrors := c.Bool("ignore-errors")
+	stencilUUID := c.String("stencil-uuid")
+
+	// find the snapshot
+	var snapshotUID string
+	if snapshotIDParam == "" || snapshotIDParam == "latest" {
+		snapshots, err := client.Snapshots(stack.Uid)
+		must(err)
+		sort.Sort(snapshotsByDate(snapshots))
+		if len(snapshots) == 0 {
+			printFatal("No snapshots found")
+		}
+		snapshotUID = snapshots[0].Uid
+	} else {
+		snapshotUID = snapshotIDParam
+	}
+
+	formation, err := loadFormation(stack, formationName)
+	must(err)
+
+	var outdir string
+	// if output is defined, then make sure we have a folder for it
+	if !stdout {
+		outdir = filepath.Dir(output)
+	}
+
+	os.MkdirAll(outdir, os.ModePerm)
+
+	var renders *cloud66.Renders
+	renders, err = client.RenderStencil(stack.Uid, snapshotUID, formation.Uid, stencilUUID, nil)
+	must(err)
+
+	foundErrors := renders.Errors()
+	if len(foundErrors) != 0 {
+		fmt.Fprintln(os.Stderr, ansi.Color("Error during rendering of stencils:", "red+h"))
+		for _, renderError := range foundErrors {
+			fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("\t%s in %s\n", renderError.Text, renderError.Stencil), "red+h"))
+		}
+
+		if !ignoreErrors {
+			return
+		}
+	}
+
+	foundWarnings := renders.Warnings()
+	if len(foundWarnings) != 0 {
+		fmt.Fprintln(os.Stderr, ansi.Color("Warning during rendering of stencils:", "yellow"))
+		for _, renderError := range foundWarnings {
+			fmt.Fprintf(os.Stderr, ansi.Color(fmt.Sprintf("\t%s in %s\n", renderError.Text, renderError.Stencil), "yellow"))
+		}
+
+		if !ignoreWarnings {
+			return
+		}
+	}
+
+	// content
+	for _, v := range renders.Stencils {
+		content := v.Content
+		// to a file
+		if output != "" {
+			err = ioutil.WriteFile(output, []byte(content), 0644)
+			if err != nil {
+				printFatal(err.Error())
+			}
+		} else {
+			// concatenate
+			fmt.Printf("%s---\n", content)
+		}
+	}
+}
+
+func runRenderLocalStencil(c *cli.Context) {
 	stack := mustStack(c)
 
 	formationName := getArgument(c, "formation")
