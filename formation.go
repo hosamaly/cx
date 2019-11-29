@@ -86,7 +86,7 @@ $ cx formations list -s mystack foo bar // only show formations foo and bar
 				},
 				cli.StringFlag{
 					Name:  "outdir",
-					Usage: "Output director for the Formation. Will be created if missing",
+					Usage: "Output director for the Formation. Will be created if missing. If not provided, ~/cloud66/formations will be used, suffixed by the formation name",
 				},
 				cli.BoolFlag{
 					Name:  "overwrite",
@@ -367,12 +367,13 @@ func runFetchFormation(c *cli.Context) {
 
 	outDir := getArgument(c, "outdir")
 	if outDir == "" {
-		printFatal("No output directory provided. Use outdir option")
-		cli.ShowSubcommandHelp(c)
+		outDir, err = defaultOutputFolder(formationName, "stencils")
+		if err != nil {
+			must(err)
+		}
 	}
 
-	relativeStencilDir := filepath.Join(outDir, "stencils")
-	stencilDir, err := filepath.Abs(relativeStencilDir)
+	stencilDir, err := filepath.Abs(outDir)
 	if err != nil {
 		printFatal(err.Error())
 	}

@@ -86,7 +86,7 @@ $ cx formations stencils list --formation bar
 				},
 				cli.BoolFlag{
 					Name:  "default-folders",
-					Usage: "When used, render will automatically create stencil and render folders in ~/cloud66/formations/...",
+					Usage: "When used, render will automatically create stencil and render folders in ~/cloud66/formations, followed by the formation name",
 				},
 				cli.StringFlag{
 					Name:  "snapshot",
@@ -337,7 +337,7 @@ func runRenderLocalStencil(c *cli.Context) {
 
 	output := c.String("output")
 	if autoFolders {
-		output, err = defaultOutputFolder(formationName)
+		output, err = defaultOutputFolder(formationName, "renders")
 		if err != nil {
 			printFatal(err.Error())
 		}
@@ -503,8 +503,8 @@ func runRenderLocalStencil(c *cli.Context) {
 	}
 }
 
-func defaultOutputFolder(formationName string) (string, error) {
-	dir := filepath.Join(homePath(), "cloud66", "formations", formationName, "renders")
+func defaultOutputFolder(formationName string, suffix string) (string, error) {
+	dir := filepath.Join(homePath(), "cloud66", "formations", formationName, suffix)
 	err := os.MkdirAll(dir, os.ModePerm)
 	if err != nil {
 		return "", err
