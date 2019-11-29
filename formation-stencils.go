@@ -529,7 +529,7 @@ func getRenderFilepath(outdir string, stencilFilename string) string {
 	stencilBasename := filepath.Base(stencilFilename)
 	// we're doing this to make rendered filenames different from the stencil templates
 	// to avoid committing them by mistake
-	renderFilename := strings.ReplaceAll(stencilBasename, "@", "-")
+	renderFilename := strings.ReplaceAll(stencilBasename, "@", ".rendered@")
 	return filepath.Join(outdir, renderFilename)
 }
 

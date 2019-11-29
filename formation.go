@@ -89,6 +89,10 @@ $ cx formations list -s mystack foo bar // only show formations foo and bar
 					Usage: "Output director for the Formation. Will be created if missing. If not provided, ~/cloud66/formations will be used, suffixed by the formation name",
 				},
 				cli.BoolFlag{
+					Name:  "y",
+					Usage: "Answer yes to all confirmation questions",
+				},
+				cli.BoolFlag{
 					Name:  "overwrite",
 					Usage: "Overwrite existing files in outdir if present. Default is false and asks for overwrite permissions per file",
 				},
@@ -106,6 +110,10 @@ $ cx formations list -s mystack foo bar // only show formations foo and bar
 				cli.StringFlag{
 					Name:  "dir",
 					Usage: "Directory holding the formation stencils. Cannot be used alongside --stencil",
+				},
+				cli.BoolFlag{
+					Name:  "default-folders",
+					Usage: "Use ~/cloud66/formations with a formation name suffix as the dir",
 				},
 				cli.StringFlag{
 					Name:  "stencil",
@@ -281,12 +289,24 @@ func runCommitFormation(c *cli.Context) {
 
 	dir := getArgument(c, "dir")
 	stencilOption := c.String("stencil")
-	if dir == "" && stencilOption == "" {
-		printFatal("Either --dir or --stencil should be provided")
+	defaultFolders := c.Bool("default-folders")
+	if dir == "" && stencilOption == "" && !defaultFolders {
+		printFatal("Either --dir, --stencil or --default-folders should be provided")
 	}
 
 	if dir != "" && stencilOption != "" {
 		printFatal("Cannot use both --dir and --stencil at the same time")
+	}
+
+	if stencilOption != "" && defaultFolders {
+		printFatal("Cannot use both --stencil and --default-folders at the same time")
+	}
+
+	if defaultFolders {
+		dir, err = defaultOutputFolder(formationName, "stencils")
+		if err != nil {
+			must(err)
+		}
 	}
 
 	message := c.String("message")
@@ -326,7 +346,7 @@ func runCommitFormation(c *cli.Context) {
 		}
 		// check to make it we're not pushing rendered files by mistake
 		checksum, _ := readMagicComment(stencilFile, "checksum")
-		if checksum != "" {
+		if checksum != "NO_MATCH" {
 			if !ask(fmt.Sprintf("Stencil %s contains a checksum which suggests it might be a rendered stencil. Are you sure you are committing the right file? (y/N)", stencilFile), "y") {
 				fmt.Println("Exiting")
 				os.Exit(0)
@@ -377,7 +397,10 @@ func runFetchFormation(c *cli.Context) {
 	if err != nil {
 		printFatal(err.Error())
 	}
-	if !ask(fmt.Sprintf("Fetching formation to %s. y/N?", stencilDir), "y") {
+
+	autoConfirm := c.Bool("y")
+
+	if !autoConfirm && !ask(fmt.Sprintf("Fetching formation to %s. y/N? ", stencilDir), "y") {
 		fmt.Println("Exiting")
 		os.Exit(0)
 	}
@@ -396,6 +419,7 @@ func runFetchFormation(c *cli.Context) {
 			if !overwrite {
 				write = ask(fmt.Sprintf("%s already exists. Overwrite N/y?", stencil.Filename), "y")
 			} else {
+				fmt.Printf("Fetching %s to %s\n", stencil.Filename, stencilDir)
 				write = true
 			}
 		} else {
