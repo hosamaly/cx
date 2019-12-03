@@ -654,7 +654,7 @@ func bundleFormation(formation *cloud66.Formation, bundleFile string, envVars []
 	if err != nil {
 		printFatal(err.Error())
 	}
-	workflowDir := filepath.Join(dir, "workflows")
+	workflowDir := filepath.Join(dir, "workflow")
 	err = os.MkdirAll(workflowDir, os.ModePerm)
 	if err != nil {
 		printFatal(err.Error())
