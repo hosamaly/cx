@@ -174,10 +174,10 @@ func generateManualSSLCertificate(c *cli.Context) (*cloud66.SslCertificate, erro
 	}
 
 	return &cloud66.SslCertificate{
-		Type:        cloud66.ManualSslCertificateType,
-		ServerNames: generateSSLCertificateServerNames(c),
-		Certificate: &certificate,
-		Key:         &key,
+		Type:                    cloud66.ManualSslCertificateType,
+		ServerNames:             generateSSLCertificateServerNames(c),
+		Certificate:             &certificate,
+		Key:                     &key,
 		IntermediateCertificate: intermediatePointer,
 		SSLTermination:          c.Bool("ssl-termination"),
 	}, nil

@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/cloud66/cli"
 	"github.com/cloud66-oss/cloud66"
+	"github.com/cloud66/cli"
 	"io"
 	"os"
 	"sort"

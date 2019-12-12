@@ -70,7 +70,6 @@ $ cx stacks list mystack -e staging -o wide
 					Name:  "environment,e",
 					Usage: "[deprecated]",
 				},
-
 			},
 			Action: runCreateStack,
 			Description: `Creates a new docker stack.

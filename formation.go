@@ -639,11 +639,6 @@ func bundleFormation(formation *cloud66.Formation, bundleFile string, envVars []
 	if err != nil {
 		printFatal(err.Error())
 	}
-	stencilGroupsDir := filepath.Join(dir, "stencil_groups")
-	err = os.MkdirAll(stencilGroupsDir, os.ModePerm)
-	if err != nil {
-		printFatal(err.Error())
-	}
 	policiesDir := filepath.Join(dir, "policies")
 	err = os.MkdirAll(policiesDir, os.ModePerm)
 	if err != nil {
@@ -688,19 +683,6 @@ func bundleFormation(formation *cloud66.Formation, bundleFile string, envVars []
 		}
 
 		file.WriteString(stencil.Body)
-	}
-
-	// stencilgroups
-	fmt.Println("Saving stencil groups...")
-	for _, stencilGroup := range formation.StencilGroups {
-		fileName := filepath.Join(stencilGroupsDir, stencilGroup.Uid+".json")
-		file, err := os.Create(fileName)
-		defer file.Close()
-		if err != nil {
-			printFatal(err.Error())
-		}
-
-		file.WriteString(stencilGroup.Rules)
 	}
 
 	// policies
@@ -814,9 +796,11 @@ func listFormation(w io.Writer, a cloud66.Formation) {
 		a.Name,
 		a.Tags,
 		len(a.Stencils),
-		len(a.StencilGroups),
+		len(a.HelmReleases),
+		len(a.Transformations),
 		len(a.Policies),
-		a.BaseTemplates,
+		len(a.Workflows),
+		len(a.FormationFilters),
 		prettyTime{ta},
 		prettyTime{a.UpdatedAt},
 	)
@@ -830,9 +814,11 @@ func printFormationList(w io.Writer, formations []cloud66.Formation) {
 		"NAME",
 		"TAGS",
 		"STENCILS",
-		"STENCIL GROUPS",
+		"HELM CHARTS",
+		"TRANSFORMATIONS",
 		"POLICIES",
-		"BASE TEMPLATE",
+		"WORKFLOWS",
+		"FILTERS",
 		"CREATED AT",
 		"LAST UPDATED")
 
@@ -953,12 +939,6 @@ func createAndUploadFormations(fb *cloud66.FormationBundle, formationName string
 
 	// add helm releases
 	err = uploadHelmReleases(fb, formation, stack, bundlePath, message)
-	if err != nil {
-		printFatal(err.Error())
-	}
-
-	// add stencil groups
-	err = uploadStencilGroups(fb, formation, stack, bundlePath, message)
 	if err != nil {
 		printFatal(err.Error())
 	}
@@ -1207,24 +1187,6 @@ func saveBundledConfigStoreRecords(bundledConfigStoreRecords *cloud66.BundledCon
 		return err
 	}
 
-	return nil
-}
-
-func uploadStencilGroups(fb *cloud66.FormationBundle, formation *cloud66.Formation, stack *cloud66.Stack, bundlePath string, message string) error {
-	var err error
-	fmt.Println("Adding stencil groups...")
-	stencilGroups := make([]*cloud66.StencilGroup, len(fb.StencilGroups))
-	for idx, group := range fb.StencilGroups {
-		stencilGroups[idx], err = group.AsStencilGroup(bundlePath)
-		if err != nil {
-			return err
-		}
-	}
-	_, err = client.AddStencilGroups(stack.Uid, formation.Uid, stencilGroups, message)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Stencil Groups added")
 	return nil
 }
 

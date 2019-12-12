@@ -8,8 +8,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/cloud66/cli"
 	"github.com/cloud66-oss/cloud66"
+	"github.com/cloud66/cli"
 )
 
 var cmdProcesses = &Command{
