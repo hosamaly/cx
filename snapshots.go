@@ -73,8 +73,8 @@ $ cx snapshots list -s mystack
 					Usage: "if set, it will return anything that can be rendered and ignores the warnings",
 				},
 				cli.StringFlag{
-					Name:  "stencil-group",
-					Usage: "if set, only stencils that match the given stencil group's rules will be returned",
+					Name:  "filter",
+					Usage: "name of the formation filter to be used in the render",
 				},
 			},
 			Description: `Render the requested files for the given formation and snapshot
@@ -131,7 +131,7 @@ func runRenders(c *cli.Context) {
 	outdir := c.String("outdir")
 	ignoreErrors := c.Bool("ignore-errors")
 	ignoreWarnings := c.Bool("ignore-warnings")
-	stencilGroup := c.String("stencil-group")
+	filter := c.String("filter")
 
 	if snapshotUID == "latest" {
 		snapshots, err := client.Snapshots(stack.Uid)
@@ -146,7 +146,7 @@ func runRenders(c *cli.Context) {
 
 	var renders *cloud66.Renders
 	var err error
-	renders, err = client.RenderSnapshot(stack.Uid, snapshotUID, formationUID, requestFiles, useLatest, stencilGroup)
+	renders, err = client.RenderSnapshot(stack.Uid, snapshotUID, formationUID, requestFiles, useLatest, filter)
 	must(err)
 
 	if outdir != "" {
