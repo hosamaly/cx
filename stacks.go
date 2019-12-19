@@ -104,12 +104,12 @@ $ cx stacks create --name my_maestro_stack --service_yaml service.yml --manifest
 					Usage: "override your stack settings and/or deployment profile settings, and use this deployment strategy instead. Options are serial, parallel, rolling (rails only) or fast (maestro only)",
 				},
 				cli.StringFlag{
-					Name:  "environment,e",
-					Usage: "full or partial environment name",
-				},
-				cli.StringFlag{
 					Name:  "stack,s",
 					Usage: "full or partial stack name. This can be omitted if the current directory is a stack directory",
+				},
+				cli.StringFlag{
+					Name:  "environment,e",
+					Usage: "full or partial environment name",
 				},
 			},
 			Action: runRedeploy,

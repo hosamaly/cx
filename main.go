@@ -52,6 +52,7 @@ var (
 var commands = []*Command{
 	cmdStacks,
 	cmdLogin,
+	cmdRedeploy,
 	cmdOpen,
 	cmdSettings,
 	cmdEasyDeploy,

@@ -7,6 +7,40 @@ import (
 	"github.com/cloud66/cli"
 )
 
+// this is an alias for stacks redeploy command
+var cmdRedeploy = &Command{
+	Name:  "redeploy",
+	Run:   runRedeploy,
+	Build: buildBasicCommand,
+	Flags: []cli.Flag{
+		cli.BoolFlag{
+			Name:  "y",
+			Usage: "answer yes to confirmations",
+		},
+		cli.BoolFlag{
+			Name:  "listen",
+			Usage: "waits for deployment to complete, shows progress and log output when available",
+		},
+		cli.StringFlag{
+			Name:  "git-ref",
+			Usage: "[classic stacks] git reference",
+		},
+		cli.StringSliceFlag{
+			Name:  "service",
+			Usage: "[docker stacks] service name (and optional colon separated reference) to include in the deploy. Repeatable for multiple services",
+			Value: &cli.StringSlice{},
+		},
+		cli.StringFlag{
+			Name:  "deploy-strategy",
+			Usage: "override your stack settings and/or deployment profile settings, and use this deployment strategy instead. Options are serial, parallel, rolling (rails only) or fast (maestro only)",
+		},
+	},
+
+	NeedsStack: true,
+	NeedsOrg:   false,
+	Short:      "An alias for 'stacks redeploy' command",
+}
+
 func runRedeploy(c *cli.Context) {
 	stack := mustStack(c)
 
