@@ -103,7 +103,7 @@ func endCreateStack(asyncId int, stackUid string) (*cloud66.GenericResponse, err
 }
 
 func initiateStackBuild(stackUid string) error {
-	_, err := client.RedeployStack(stackUid, "", nil)
+	_, err := client.RedeployStack(stackUid, "", "", nil)
 	return err
 }
 

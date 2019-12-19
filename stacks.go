@@ -86,6 +86,10 @@ $ cx stacks create --name my_maestro_stack --service_yaml service.yml --manifest
 					Name:  "y",
 					Usage: "answer yes to confirmations",
 				},
+				cli.BoolFlag{
+					Name:  "listen",
+					Usage: "waits for deployment to complete, shows progress and log output when available",
+				},
 				cli.StringFlag{
 					Name:  "git-ref",
 					Usage: "[classic stacks] git reference",
@@ -95,9 +99,9 @@ $ cx stacks create --name my_maestro_stack --service_yaml service.yml --manifest
 					Usage: "[docker stacks] service name (and optional colon separated reference) to include in the deploy. Repeatable for multiple services",
 					Value: &cli.StringSlice{},
 				},
-				cli.BoolFlag{
-					Name:  "listen",
-					Usage: "show stack deployment progress and log output",
+				cli.StringFlag{
+					Name:  "deploy-strategy",
+					Usage: "override your stack settings and/or deployment profile settings, and use this deployment strategy instead. Options are serial, parallel, rolling (rails only) or fast (maestro only)",
 				},
 				cli.StringFlag{
 					Name:  "environment,e",
@@ -109,13 +113,12 @@ $ cx stacks create --name my_maestro_stack --service_yaml service.yml --manifest
 				},
 			},
 			Action: runRedeploy,
-			Description: `Enqueues redeployment of the stack.
-If the stack is already building, another build will be enqueued and performed immediately
-after the current one is finished.
-
--y answers yes to confirmation question if the stack is production.
---git-ref will redeploy the specific branch, tag or hash git reference [classic stacks]
---service is a repeateable option to deploy only the specified service(s). Including a reference (separated by a colon) will attempt to deploy that particular reference for that service [docker stacks]
+			Description: `Enqueues redeployment of the stack. If the stack is already building, another build will be enqueued and performed immediately after the current one is finished.
+			
+   -y answers yes to confirmation question if the stack is production.
+   --git-ref will redeploy the specific branch, tag or hash git reference [classic stacks]
+   --service is a repeateable option to deploy only the specified service(s). Including a reference (separated by a colon) will attempt to deploy that particular reference for that service [docker stacks]
+   --deploy-strategy is an override for the deploy strategy you want to use. Options are serial, parallel, rolling (rails only) or fast (maestro only)	
 `,
 		},
 		cli.Command{
