@@ -34,6 +34,10 @@ var cmdRedeploy = &Command{
 			Name:  "deploy-strategy",
 			Usage: "override your stack settings and/or deployment profile settings, and use this deployment strategy instead. Options are serial, parallel, rolling (rails only) or fast (maestro only)",
 		},
+		cli.StringFlag{
+			Name:  "deployment-profile",
+			Usage: "use a named deployment profile that you have configured on your stack",
+		},
 	},
 
 	NeedsStack: true,
@@ -63,6 +67,7 @@ func runRedeploy(c *cli.Context) {
 	gitRef := c.String("git-ref")
 	services := c.StringSlice("service")
 	deployStrategy := c.String("deploy-strategy")
+	deploymentProfile := c.String("deployment-profile")
 
 	if deployStrategy != "" {
 		if deployStrategy != "serial" && deployStrategy != "parallel" &&
@@ -81,7 +86,7 @@ func runRedeploy(c *cli.Context) {
 		printFatal("The \"service\" argument only applies to Maestro stacks")
 	}
 
-	result, err := client.RedeployStack(stack.Uid, gitRef, deployStrategy, services)
+	result, err := client.RedeployStack(stack.Uid, gitRef, deployStrategy, deploymentProfile, services)
 	must(err)
 
 	if !c.Bool("listen") || result.Queued {

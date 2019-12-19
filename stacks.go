@@ -104,6 +104,10 @@ $ cx stacks create --name my_maestro_stack --service_yaml service.yml --manifest
 					Usage: "override your stack settings and/or deployment profile settings, and use this deployment strategy instead. Options are serial, parallel, rolling (rails only) or fast (maestro only)",
 				},
 				cli.StringFlag{
+					Name:  "deployment-profile",
+					Usage: "use a named deployment profile that you have configured on your stack",
+				},
+				cli.StringFlag{
 					Name:  "stack,s",
 					Usage: "full or partial stack name. This can be omitted if the current directory is a stack directory",
 				},
@@ -118,7 +122,8 @@ $ cx stacks create --name my_maestro_stack --service_yaml service.yml --manifest
    -y answers yes to confirmation question if the stack is production.
    --git-ref will redeploy the specific branch, tag or hash git reference [classic stacks]
    --service is a repeateable option to deploy only the specified service(s). Including a reference (separated by a colon) will attempt to deploy that particular reference for that service [docker stacks]
-   --deploy-strategy is an override for the deploy strategy you want to use. Options are serial, parallel, rolling (rails only) or fast (maestro only)	
+   --deploy-strategy is an override for the deploy strategy you want to use. Options are serial, parallel, rolling (rails only) or fast (maestro only)
+   --deployment-profile allows you to specify a specific deployment profile to use			
 `,
 		},
 		cli.Command{
