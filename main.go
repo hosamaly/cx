@@ -296,10 +296,10 @@ func initClients(c *cli.Context, startAuth bool) {
 			if startAuth {
 				url := client.GetAuthorizeURL()
 
-				fmt.Printf("Openning %s\n", url)
+				fmt.Printf("Opening %s\n", url)
 				e := webbrowser.Open(url)
 				if e != nil {
-					fmt.Printf("Counldn't open the browser because %s\n", e.Error())
+					fmt.Printf("Couldn't open the browser because %s\n", e.Error())
 					fmt.Println("Please open the following URL in your browser and paste the access code here:")
 					fmt.Println(url)
 				} else {
@@ -308,7 +308,7 @@ func initClients(c *cli.Context, startAuth bool) {
 
 				token, err := cloud66.FetchTokenFromCallback(5 * time.Minute)
 				if err != nil {
-					printFatal("failed to start the authentication listener %s", err)
+					printFatal("Failed to start the authentication listener %s", err)
 				}
 
 				client.Authorize(cxHome(), selectedProfile.TokenFile, token)
