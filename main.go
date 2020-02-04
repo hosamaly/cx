@@ -82,6 +82,7 @@ var commands = []*Command{
 	cmdProcesses,
 	cmdRegisterServer,
 	cmdVersion,
+	cmdSkycap,
 	cmdDumpToken,
 	cmdConfig,
 }
