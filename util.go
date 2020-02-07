@@ -168,6 +168,10 @@ func printWarning(message string, args ...interface{}) {
 	log.Println(colorizeMessage("yellow", "warning:", message, args...))
 }
 
+func printInfo(message string, args ...interface{}) {
+	log.Println(colorizeMessage("grey", "info:", message, args...))
+}
+
 // potentially needs refactor --> genericresponse type?
 func printGenericResponse(genericRes cloud66.GenericResponse) {
 	printGenericResponseCustom(genericRes, "", "")

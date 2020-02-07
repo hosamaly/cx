@@ -360,23 +360,21 @@ func createDirIfNotExist(dir string) error {
 }
 
 func setupSentry() {
-	if VERSION != "dev" {
-		err := sentry.Init(sentry.ClientOptions{
-			Dsn: "https://39c187859231424fb4865e90d42a29a3@sentry.io/153008",
-		})
+	err := sentry.Init(sentry.ClientOptions{
+		Dsn: "https://39c187859231424fb4865e90d42a29a3@sentry.io/153008",
+	})
 
-		if err != nil {
-			fmt.Printf("Sentry initialization failed: %v\n", err)
-			return
-		}
-
-		sentry.ConfigureScope(func(scope *sentry.Scope) {
-			scope.SetTag("Version", VERSION)
-			scope.SetTag("Platform", runtime.GOOS)
-			scope.SetTag("Architecture", runtime.GOARCH)
-			scope.SetTag("goversion", runtime.Version())
-		})
+	if err != nil {
+		fmt.Printf("Sentry initialization failed: %v\n", err)
+		return
 	}
+
+	sentry.ConfigureScope(func(scope *sentry.Scope) {
+		scope.SetTag("Version", VERSION)
+		scope.SetTag("Platform", runtime.GOOS)
+		scope.SetTag("Architecture", runtime.GOARCH)
+		scope.SetTag("goversion", runtime.Version())
+	})
 }
 
 func recoverFromPanic() {

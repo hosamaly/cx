@@ -11,13 +11,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
+	"github.com/cenkalti/backoff"
 	"github.com/cloud66-oss/cloud66"
 	"github.com/cloud66-oss/trackman/notifiers"
 	trackmanType "github.com/cloud66-oss/trackman/utils"
 	"github.com/cloud66/cli"
+	"github.com/getsentry/sentry-go"
+	"github.com/sirupsen/logrus"
 )
+
+const MAX_BACKOFF = 600
 
 var cmdSkycap = &Command{
 	Name:       "skycap",
@@ -88,20 +91,39 @@ func runSkycapListenDeploy(c *cli.Context) {
 	fmt.Println("Listening for Skycap snapshot events...")
 	close := make(chan os.Signal, 1)
 	signal.Notify(close, os.Interrupt, syscall.SIGTERM)
+
+	operation := func() error {
+		msg, err := client.PopQueue("skycap_render_queue", false)
+		if err != nil {
+			return err
+		}
+		if msg != nil {
+			doRender(msg, level)
+		}
+
+		return nil
+	}
+
+	exp := backoff.NewExponentialBackOff()
+	exp.InitialInterval = interval
+	exp.MaxElapsedTime = MAX_BACKOFF * time.Second
+
+	ticker := backoff.NewTicker(exp)
+
 	for {
 		select {
-		case <-time.After(interval):
+		case <-ticker.C:
 			if skycapListenDeployRunning {
 				continue
 			}
-			go func() {
-				msg, err := client.PopQueue("skycap_render_queue", false)
-				must(err)
-
-				if msg != nil {
-					doRender(msg, level)
-				}
-			}()
+			if err := operation(); err != nil {
+				printError(err.Error())
+				// these are errors between cx and Cloud 66 and not deployment errors.
+				// we're not going to send any kubectl or helm output to Skycap
+				sentry.CaptureException(err)
+			} else {
+				exp.Reset()
+			}
 		case <-close:
 			fmt.Println("Exiting...")
 			os.Exit(0)
