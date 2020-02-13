@@ -16,7 +16,6 @@ import (
 	"github.com/cloud66-oss/trackman/notifiers"
 	trackmanType "github.com/cloud66-oss/trackman/utils"
 	"github.com/cloud66/cli"
-	"github.com/getsentry/sentry-go"
 	"github.com/sirupsen/logrus"
 )
 
@@ -34,6 +33,7 @@ type skycapRenderQueuePayload struct {
 	Formation *cloud66.Formation
 	Snapshot  *cloud66.Snapshot
 	Stack     *cloud66.Stack
+	Workflow  *cloud66.Workflow
 }
 
 var skycapListenDeployRunning bool
@@ -88,7 +88,7 @@ func runSkycapListenDeploy(c *cli.Context) {
 		printFatal("Interval must be 5 seconds or longer")
 	}
 
-	fmt.Println("Listening for Skycap snapshot events...")
+	printInfo("Listening for Skycap snapshot events...")
 	close := make(chan os.Signal, 1)
 	signal.Notify(close, os.Interrupt, syscall.SIGTERM)
 
@@ -118,14 +118,11 @@ func runSkycapListenDeploy(c *cli.Context) {
 			}
 			if err := operation(); err != nil {
 				printError(err.Error())
-				// these are errors between cx and Cloud 66 and not deployment errors.
-				// we're not going to send any kubectl or helm output to Skycap
-				sentry.CaptureException(err)
 			} else {
 				exp.Reset()
 			}
 		case <-close:
-			fmt.Println("Exiting...")
+			printInfo("Exiting...")
 			os.Exit(0)
 		}
 	}
@@ -140,7 +137,7 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 	var payload skycapRenderQueuePayload
 	err := json.Unmarshal(msg, &payload)
 	if err != nil {
-		fmt.Printf("Error in fetching items from the queue %v\n", err)
+		printError("Error in fetching items from the queue %v\n", err)
 		return
 	}
 
@@ -148,11 +145,18 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 		return
 	}
 
-	fmt.Printf("Formation %s got a Snapshot (uuid: %s) on Stack %s\n", payload.Formation.Name, payload.Snapshot.Uid, payload.Stack.Name)
+	printInfo(fmt.Sprintf("Running formation %s, workflow %s using snapshot %s (taken on %s) for stack %s\n", payload.Formation.Name, payload.Workflow.Name, payload.Snapshot.Uid, payload.Snapshot.UpdatedAt, payload.Stack.Name))
 
-	workflowWrapper, err := client.GetWorkflow(payload.Stack.Uid, payload.Formation.Uid, payload.Snapshot.Uid, false, "")
+	var workflowName string
+	if payload.Workflow == nil {
+		workflowName = ""
+	} else {
+		workflowName = payload.Workflow.Name
+	}
+
+	workflowWrapper, err := client.GetWorkflow(payload.Stack.Uid, payload.Formation.Uid, payload.Snapshot.Uid, true, workflowName)
 	if err != nil {
-		fmt.Printf("Error in fetching default workflow %s\n", err)
+		printError("Error in fetching default workflow %s\n", err)
 		return
 	}
 
@@ -175,6 +179,10 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 		fmt.Println(stepErrors.Error())
 	}
 
-	fmt.Println("Finished deployment")
+	if stepErrors != nil || runErrors != nil {
+		printError("Deployment failed or has errors")
+	} else {
+		printInfo("Finished deployment")
+	}
 
 }
