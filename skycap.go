@@ -145,13 +145,17 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 		return
 	}
 
-	printInfo(fmt.Sprintf("Running formation %s, workflow %s using snapshot %s (taken on %s) for stack %s\n", payload.Formation.Name, payload.Workflow.Name, payload.Snapshot.Uid, payload.Snapshot.UpdatedAt, payload.Stack.Name))
-
 	var workflowName string
 	if payload.Workflow == nil {
 		workflowName = ""
 	} else {
 		workflowName = payload.Workflow.Name
+	}
+
+	if payload.Workflow == nil {
+		printInfo(fmt.Sprintf("Running formation %s, using snapshot %s (taken on %s) for stack %s\n", payload.Formation.Name, payload.Snapshot.Uid, payload.Snapshot.UpdatedAt, payload.Stack.Name))
+	} else {
+		printInfo(fmt.Sprintf("Running formation %s, workflow %s using snapshot %s (taken on %s) for stack %s\n", payload.Formation.Name, payload.Workflow.Name, payload.Snapshot.Uid, payload.Snapshot.UpdatedAt, payload.Stack.Name))
 	}
 
 	workflowWrapper, err := client.GetWorkflow(payload.Stack.Uid, payload.Formation.Uid, payload.Snapshot.Uid, true, workflowName)
