@@ -322,7 +322,7 @@ func initClients(c *cli.Context, startAuth bool) {
 
 	organization, err := org(c)
 	if err != nil {
-		printFatal("Unable to retrieve organization")
+		printFatal("Unable to retrieve organization: %s", err.Error())
 		os.Exit(2)
 	}
 	if organization != nil {
