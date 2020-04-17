@@ -19,7 +19,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const MAX_BACKOFF = 600
+const (
+	MAX_BACKOFF  = 600
+	QUEUE_NAME   = "skycap_render_queue"
+	TASK_SUCCESS = "success"
+	TASK_FAIL    = "fail"
+)
 
 var cmdSkycap = &Command{
 	Name:       "skycap",
@@ -30,10 +35,11 @@ var cmdSkycap = &Command{
 }
 
 type skycapRenderQueuePayload struct {
-	Formation *cloud66.Formation
-	Snapshot  *cloud66.Snapshot
-	Stack     *cloud66.Stack
-	Workflow  *cloud66.Workflow
+	TaskUUID  string             `json:"task_uuid"`
+	Formation *cloud66.Formation `json:"formation"`
+	Snapshot  *cloud66.Snapshot  `json:"snapshot"`
+	Stack     *cloud66.Stack     `json:"stack"`
+	Workflow  *cloud66.Workflow  `json:"workflow"`
 }
 
 var skycapListenDeployRunning bool
@@ -93,7 +99,7 @@ func runSkycapListenDeploy(c *cli.Context) {
 	signal.Notify(close, os.Interrupt, syscall.SIGTERM)
 
 	operation := func() error {
-		msg, err := client.PopQueue("skycap_render_queue", false)
+		msg, err := client.PopQueue(QUEUE_NAME, false)
 		if err != nil {
 			return err
 		}
@@ -152,15 +158,23 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 		workflowName = payload.Workflow.Name
 	}
 
-	if payload.Workflow == nil {
-		printInfo(fmt.Sprintf("Running formation %s, using snapshot %s (taken on %s) for stack %s\n", payload.Formation.Name, payload.Snapshot.Uid, payload.Snapshot.UpdatedAt, payload.Stack.Name))
+	var taskMsg string
+	if payload.TaskUUID == "" {
+		taskMsg = "No Task"
 	} else {
-		printInfo(fmt.Sprintf("Running formation %s, workflow %s using snapshot %s (taken on %s) for stack %s\n", payload.Formation.Name, payload.Workflow.Name, payload.Snapshot.Uid, payload.Snapshot.UpdatedAt, payload.Stack.Name))
+		taskMsg = payload.TaskUUID
+	}
+
+	if payload.Workflow == nil {
+		printInfo(fmt.Sprintf("Running task %s formation %s, using snapshot %s (taken on %s) for stack %s\n", taskMsg, payload.Formation.Name, payload.Snapshot.Uid, payload.Snapshot.UpdatedAt, payload.Stack.Name))
+	} else {
+		printInfo(fmt.Sprintf("Running task %s formation %s, workflow %s using snapshot %s (taken on %s) for stack %s\n", taskMsg, payload.Formation.Name, payload.Workflow.Name, payload.Snapshot.Uid, payload.Snapshot.UpdatedAt, payload.Stack.Name))
 	}
 
 	workflowWrapper, err := client.GetWorkflow(payload.Stack.Uid, payload.Formation.Uid, payload.Snapshot.Uid, true, workflowName)
 	if err != nil {
 		printError("Error in fetching default workflow %s\n", err)
+		updateTask(payload.TaskUUID, TASK_FAIL, err.Error())
 		return
 	}
 
@@ -176,17 +190,40 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 
 	workflow, err := trackmanType.LoadWorkflowFromReader(ctx, options, reader)
 	runErrors, stepErrors := workflow.Run(ctx)
+	var runErr string
+	var stepErr string
 	if runErrors != nil {
-		fmt.Println(runErrors.Error())
+		runErr = runErrors.Error()
+		fmt.Println(runErr)
 	}
 	if stepErrors != nil {
-		fmt.Println(stepErrors.Error())
+		stepErr = stepErrors.Error()
+		fmt.Println(stepErr)
+	}
+
+	if runErrors != nil || stepErrors != nil {
+		updateTask(payload.TaskUUID, TASK_FAIL, fmt.Sprintf("Run Errors %s\nStep Errors: %s\n", runErr, stepErr))
+	}
+
+	if stepErrors != nil {
+
 	}
 
 	if stepErrors != nil || runErrors != nil {
 		printError("Deployment failed or has errors")
 	} else {
 		printInfo("Finished deployment")
+		updateTask(payload.TaskUUID, TASK_SUCCESS, "")
 	}
+}
 
+func updateTask(taskUUID string, state string, runResult string) {
+	if taskUUID == "" {
+		printInfo("No task to update")
+		return
+	}
+	_, updateErr := client.UpdateQueue(QUEUE_NAME, taskUUID, state, runResult)
+	if updateErr != nil {
+		printError("Failed to update the task with results %s\n", updateErr.Error())
+	}
 }
