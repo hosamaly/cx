@@ -24,6 +24,7 @@ const (
 	QUEUE_NAME   = "skycap_render_queue"
 	TASK_SUCCESS = "success"
 	TASK_FAIL    = "fail"
+	TASK_ACK     = "ack"
 )
 
 var cmdSkycap = &Command{
@@ -99,7 +100,7 @@ func runSkycapListenDeploy(c *cli.Context) {
 	signal.Notify(close, os.Interrupt, syscall.SIGTERM)
 
 	operation := func() error {
-		msg, err := client.PopQueue(QUEUE_NAME, false)
+		msg, err := client.PopQueue(QUEUE_NAME)
 		if err != nil {
 			return err
 		}
@@ -163,6 +164,8 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 		taskMsg = "No Task"
 	} else {
 		taskMsg = payload.TaskUUID
+		// ack the message
+		updateTask(payload.TaskUUID, TASK_ACK, "")
 	}
 
 	if payload.Workflow == nil {
@@ -188,9 +191,15 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 		Timeout:     10 * time.Minute,
 	}
 
-	workflow, err := trackmanType.LoadWorkflowFromReader(ctx, options, reader)
-	runErrors, stepErrors := workflow.Run(ctx)
 	var runErr string
+	workflow, err := trackmanType.LoadWorkflowFromReader(ctx, options, reader)
+	if err != nil {
+		runErr = err.Error()
+		fmt.Println(runErr)
+		updateTask(payload.TaskUUID, TASK_FAIL, runErr)
+		return
+	}
+	runErrors, stepErrors := workflow.Run(ctx)
 	var stepErr string
 	if runErrors != nil {
 		runErr = runErrors.Error()

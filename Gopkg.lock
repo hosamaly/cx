@@ -2,23 +2,31 @@
 
 
 [[projects]]
-  branch = "master"
-  digest = "1:ea64bc88a8667a4a0fc42b64961cb0ce4e69b39600e3e56a08fb2a9a7321a61b"
-  name = "github.com/cloud66-oss/cloud66"
+  digest = "1:fe9b15f080d19c215514056bae7589d6958821766fb5f5fceb9402ec9df2f736"
+  name = "github.com/cenkalti/backoff"
   packages = ["."]
   pruneopts = "UT"
-  revision = "f02b8bbb45f415eb0cadad49629dece274595666"
+  revision = "18fe4ce5a8550e0d0919b680ad3c080a5455bddf"
+  version = "v4.0.2"
 
 [[projects]]
   branch = "master"
-  digest = "1:945fb7bc5c0fd29d19a459b60b9b4557f90535beec9dc4db6502d1ef764ea928"
+  digest = "1:13796c6ed3fa0fc2ef6fbfa85a22d2c6d601ab74badf41eb37d7751776651219"
+  name = "github.com/cloud66-oss/cloud66"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "c6375c59b8c72557478ec7ac1dc7a1cf110ddc4e"
+
+[[projects]]
+  branch = "master"
+  digest = "1:115c384d03cb0cbba94abad64ae97926f68dd6f47ed61e09b891d0a940bac00d"
   name = "github.com/cloud66-oss/trackman"
   packages = [
     "notifiers",
     "utils",
   ]
   pruneopts = "UT"
-  revision = "1d1d08819e9ca34438d779a54e92328c5f013d7a"
+  revision = "95383fa8ab733e35f9d704bf31f76a0e6befd40d"
 
 [[projects]]
   digest = "1:4a2ef035c205a86c12b2c56b3f324d35c98658c2ae445e6236e3ee1ef8dac2fd"
@@ -45,6 +53,14 @@
   packages = ["."]
   pruneopts = "UT"
   revision = "19624b7fbd8037566e8298754bc5d2c917cc1fa3"
+
+[[projects]]
+  digest = "1:bde2a1ce1de28312f165a88926c12f4acd19dc4d7da96a445dfa5a29eae07a93"
+  name = "github.com/fatih/color"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "daf2830f2741ebb735b21709a520c5f37d642d85"
+  version = "v1.9.0"
 
 [[projects]]
   digest = "1:abeb38ade3f32a92943e5be54f55ed6d6e3b6602761d74b4aab4c9dd45c18abd"
@@ -181,6 +197,22 @@
   version = "v1.8.1"
 
 [[projects]]
+  digest = "1:0109cf4321a15313ec895f42e723e1f76121c6975ea006abfa20012272ec0937"
+  name = "github.com/mattn/go-colorable"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "68e95eba382c972aafde02ead2cd2426a8a92480"
+  version = "v0.1.6"
+
+[[projects]]
+  digest = "1:0c58d31abe2a2ccb429c559b6292e7df89dcda675456fecc282fa90aa08273eb"
+  name = "github.com/mattn/go-isatty"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "7b513a986450394f7bbf1476909911b3aa3a55ce"
+  version = "v0.0.12"
+
+[[projects]]
   digest = "1:e74c7fcca6a9c96f8f1dacc7ae40a09338e51ce4b379f139069c88ba7ea08239"
   name = "github.com/mgutz/ansi"
   packages = ["."]
@@ -306,6 +338,14 @@
   version = "v1.4.0"
 
 [[projects]]
+  digest = "1:7078327e83236f36a7b676f2ce704dc6ec46f47e52ba9fc2aa32f04be006ac96"
+  name = "github.com/thanhpk/randstr"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6e89fe966579c5905054d46d61cf1621ef291e2c"
+  version = "v1.0.4"
+
+[[projects]]
   digest = "1:e1cd343b3883ced86b6873fe4d2f76799259fba3d1656df6ac0a7fa92644c049"
   name = "github.com/toqueteos/webbrowser"
   packages = ["."]
@@ -364,6 +404,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/cenkalti/backoff",
     "github.com/cloud66-oss/cloud66",
     "github.com/cloud66-oss/trackman/notifiers",
     "github.com/cloud66-oss/trackman/utils",

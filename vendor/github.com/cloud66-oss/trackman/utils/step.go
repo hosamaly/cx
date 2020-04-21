@@ -5,9 +5,10 @@ import (
 	"context"
 	"fmt"
 	"html/template"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -18,7 +19,7 @@ const (
 
 // StepOptions provides options for a Step
 type StepOptions struct {
-	Notifier func(ctx context.Context, event *Event) error
+	Notifier func(ctx context.Context, logger *logrus.Logger, event *Event) error
 }
 
 // Step is a single running Step
@@ -36,9 +37,11 @@ type Step struct {
 	AskToProceed   bool              `yaml:"ask_to_proceed" json:"ask_to_proceed"`
 	ShowCommand    bool              `yaml:"show_command" json:"show_command"`
 	Disabled       bool              `yaml:"disabled" json:"disabled"`
+	Logger         *LogDefinition    `yaml:"logger" json:"logger"`
 
 	options   *StepOptions
 	workflow  *Workflow
+	logger    *logrus.Logger
 	status    int
 	dependsOn []*Step
 }
@@ -93,32 +96,6 @@ func (s *Step) shouldRun() bool {
 	return true
 }
 
-func (s *Step) parseCommand(ctx context.Context) error {
-	buf := &bytes.Buffer{}
-	tmpl, err := template.New("t1").Parse(s.Command)
-	if err != nil {
-		return err
-	}
-
-	err = tmpl.Execute(buf, s)
-	if err != nil {
-		return err
-	}
-
-	s.Command = buf.String()
-
-	return nil
-}
-
-func (s *Step) expandEnvVars(ctx context.Context) {
-	expandedCommand := os.ExpandEnv(s.Command)
-	s.Command = expandedCommand
-
-	if s.Workdir != "" {
-		s.Workdir = os.ExpandEnv(s.Workdir)
-	}
-}
-
 func (s *Step) isDone() bool {
 	return s.status == stepDone
 }
@@ -144,20 +121,15 @@ func (s *Step) Run(ctx context.Context) error {
 	s.status = stepRunning
 	defer func() { s.status = stepDone }()
 
-	logger, ctx := LoggerContext(ctx)
-
 	if s.Disabled {
-		logger.WithField(FldStep, s.Name).Info("Disabled step. Skipping")
+		s.logger.WithField(FldStep, s.Name).Info("Disabled step. Skipping")
 		return nil
 	}
 
-	err := s.parseCommand(ctx)
+	err := s.EnrichStep(ctx)
 	if err != nil {
-		// a failure here is down to workflow errors so
-		// continue on failure doesn't apply
 		return err
 	}
-	s.expandEnvVars(ctx)
 
 	spinner, err := NewSpinnerForStep(ctx, *s)
 	if err != nil {
@@ -171,7 +143,7 @@ func (s *Step) Run(ctx context.Context) error {
 			return err
 		}
 
-		logger.WithField(FldStep, spinner.Name).Error(err)
+		s.logger.WithField(FldStep, spinner.Name).Error(err)
 	}
 
 	// main spinner is done. we should use the probe to check if
@@ -192,9 +164,148 @@ func (s *Step) Run(ctx context.Context) error {
 				return err
 			}
 
-			logger.WithField(FldStep, probeSpinner.Name).Error(err)
+			s.logger.WithField(FldStep, probeSpinner.Name).Error(err)
 		}
 	}
 
 	return nil
+}
+
+// EnrichStep resolves environment variables and parses the command for the step
+// on all applicable attributes
+func (s *Step) EnrichStep(ctx context.Context) error {
+	var err error
+
+	// parse for meta data
+	if s.Metadata != nil {
+		for idx, metadata := range s.Metadata {
+			if s.Metadata[idx], err = s.parseAttribute(ctx, metadata); err != nil {
+				return err
+			}
+		}
+	}
+	if s.Command, err = s.parseAttribute(ctx, s.Command); err != nil {
+		return err
+	}
+	if s.Name, err = s.parseAttribute(ctx, s.Name); err != nil {
+		return err
+	}
+	if s.Workdir, err = s.parseAttribute(ctx, s.Workdir); err != nil {
+		return err
+	}
+	if s.Probe != nil {
+		if s.Probe.Command, err = s.parseAttribute(ctx, s.Probe.Command); err != nil {
+			return err
+		}
+		if s.Probe.Workdir, err = s.parseAttribute(ctx, s.Probe.Workdir); err != nil {
+			return err
+		}
+	}
+	if s.Logger != nil {
+		if s.Logger.Destination, err = s.parseAttribute(ctx, s.Logger.Destination); err != nil {
+			return err
+		}
+		if s.Logger.Format, err = s.parseAttribute(ctx, s.Logger.Format); err != nil {
+			return err
+		}
+		if s.Logger.Level, err = s.parseAttribute(ctx, s.Logger.Level); err != nil {
+			return err
+		}
+		if s.Logger.Type, err = s.parseAttribute(ctx, s.Logger.Type); err != nil {
+			return err
+		}
+	}
+	if s.Preflights != nil {
+		for idx, preFlight := range s.Preflights {
+			if s.Preflights[idx].Command, err = s.parseAttribute(ctx, preFlight.Command); err != nil {
+				return err
+			}
+			if s.Preflights[idx].Workdir, err = s.parseAttribute(ctx, preFlight.Workdir); err != nil {
+				return err
+			}
+			if s.Preflights[idx].Message, err = s.parseAttribute(ctx, preFlight.Message); err != nil {
+				return err
+			}
+		}
+	}
+
+	// expand env var
+	if s.Metadata != nil {
+		for idx, metadata := range s.Metadata {
+			if s.Metadata[idx], err = ExpandEnvVars(ctx, metadata); err != nil {
+				return err
+			}
+		}
+	}
+	if s.Command, err = ExpandEnvVars(ctx, s.Command); err != nil {
+		return err
+	}
+	if s.Workdir, err = ExpandEnvVars(ctx, s.Workdir); err != nil {
+		return err
+	}
+	if s.Command, err = ExpandEnvVars(ctx, s.Command); err != nil {
+		return err
+	}
+	if s.Name, err = ExpandEnvVars(ctx, s.Name); err != nil {
+		return err
+	}
+	if s.Workdir, err = ExpandEnvVars(ctx, s.Workdir); err != nil {
+		return err
+	}
+	if s.Probe != nil {
+		if s.Probe.Command, err = ExpandEnvVars(ctx, s.Probe.Command); err != nil {
+			return err
+		}
+		if s.Probe.Workdir, err = ExpandEnvVars(ctx, s.Probe.Workdir); err != nil {
+			return err
+		}
+	}
+	if s.Logger != nil {
+		if s.Logger.Destination, err = ExpandEnvVars(ctx, s.Logger.Destination); err != nil {
+			return err
+		}
+		if s.Logger.Format, err = ExpandEnvVars(ctx, s.Logger.Format); err != nil {
+			return err
+		}
+		if s.Logger.Level, err = ExpandEnvVars(ctx, s.Logger.Level); err != nil {
+			return err
+		}
+		if s.Logger.Type, err = ExpandEnvVars(ctx, s.Logger.Type); err != nil {
+			return err
+		}
+	}
+	if s.Preflights != nil {
+		for idx, preFlight := range s.Preflights {
+			if s.Preflights[idx].Command, err = ExpandEnvVars(ctx, preFlight.Command); err != nil {
+				return err
+			}
+			if s.Preflights[idx].Workdir, err = ExpandEnvVars(ctx, preFlight.Workdir); err != nil {
+				return err
+			}
+			if s.Preflights[idx].Message, err = ExpandEnvVars(ctx, preFlight.Message); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *Step) parseAttribute(ctx context.Context, value string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+
+	buf := &bytes.Buffer{}
+	tmpl, err := template.New("step").Parse(value)
+	if err != nil {
+		return "", err
+	}
+
+	err = tmpl.Execute(buf, s)
+	if err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }
