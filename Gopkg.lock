@@ -18,15 +18,15 @@
   revision = "c6375c59b8c72557478ec7ac1dc7a1cf110ddc4e"
 
 [[projects]]
-  branch = "master"
-  digest = "1:115c384d03cb0cbba94abad64ae97926f68dd6f47ed61e09b891d0a940bac00d"
+  branch = "dev"
+  digest = "1:6095c456fa288a1917edeb0d36cca69b1ebe20f1054f7a178e126b27d339b2ea"
   name = "github.com/cloud66-oss/trackman"
   packages = [
     "notifiers",
     "utils",
   ]
   pruneopts = "UT"
-  revision = "95383fa8ab733e35f9d704bf31f76a0e6befd40d"
+  revision = "762900efd603c40f8b428f2339072379248967de"
 
 [[projects]]
   digest = "1:4a2ef035c205a86c12b2c56b3f324d35c98658c2ae445e6236e3ee1ef8dac2fd"

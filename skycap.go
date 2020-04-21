@@ -188,6 +188,11 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 		Notifier:    notifiers.ConsoleNotify,
 		Concurrency: runtime.NumCPU() - 1,
 		Timeout:     10 * time.Minute,
+		LogDefinition: &trackmanType.LogDefinition{
+			Type:   "stdout",
+			Level:  level.String(),
+			Format: "text",
+		},
 	}
 
 	var runErr string
