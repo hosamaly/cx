@@ -21,7 +21,6 @@ import (
 	"github.com/cloud66-oss/trackman/notifiers"
 	trackmanType "github.com/cloud66-oss/trackman/utils"
 	"github.com/cloud66/cli"
-	"github.com/sirupsen/logrus"
 	"gopkg.in/go-yaml/yaml.v2"
 )
 
@@ -145,10 +144,6 @@ $ cx formations list -s mystack foo bar // only show formations foo and bar
 				cli.StringFlag{
 					Name:  "workflow,w",
 					Usage: "[OPTIONAL] name of the workflow to use for the formation deployment",
-				},
-				cli.StringFlag{
-					Name:  "log-level",
-					Usage: "[OPTIONAL, DEFAULT: info] log level. Use debug to see process output",
 				},
 			},
 		},
@@ -465,21 +460,11 @@ func runDeployFormation(c *cli.Context) {
 	// use HEAD stencil instead of the version in in the snapshot
 	useLatest := c.BoolT("use-latest")
 
-	level := logrus.InfoLevel
-	logLevel := c.String("log-level")
-
-	if logLevel == "info" {
-		level = logrus.InfoLevel
-	} else if logLevel == "debug" {
-		level = logrus.DebugLevel
-	}
-
 	workflowName := getArgument(c, "workflow")
 	workflowWrapper, err := client.GetWorkflow(stack.Uid, formation.Uid, snapshotUID, useLatest, workflowName)
 	must(err)
 
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, trackmanType.CtxLogLevel, level)
 
 	reader := bytes.NewReader(workflowWrapper.Workflow)
 	options := &trackmanType.WorkflowOptions{

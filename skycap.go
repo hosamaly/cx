@@ -182,7 +182,6 @@ func doRender(msg json.RawMessage, level logrus.Level) {
 	}
 
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, trackmanType.CtxLogLevel, level)
 
 	reader := bytes.NewReader(workflowWrapper.Workflow)
 	options := &trackmanType.WorkflowOptions{
