@@ -23,9 +23,9 @@ var cmdEnvVars = &Command{
 func buildEnvVars() cli.Command {
 	base := buildBasicCommand()
 	base.Subcommands = []cli.Command{
-		cli.Command{
+		{
 			Name:   "list",
-			Usage:  "lists environement variables",
+			Usage:  "lists environment variables",
 			Action: runEnvVars,
 			Flags: []cli.Flag{
 				cli.BoolFlag{
@@ -33,9 +33,9 @@ func buildEnvVars() cli.Command {
 					Usage: "show environment variable history",
 				},
 			},
-			Description: `Lists all the environement variables of the given stack.
+			Description: `Lists all the environment variables of the given stack.
 The environment_variables options can be a list of multiple environment_variables as separate parameters.
-To change environement variable values, use the env-vars-set command.
+To change environment variable values, use the env-vars set command.
 
 Examples:
 $ cx env-vars list -s mystack
@@ -64,18 +64,31 @@ STACK_BASE      	/abc/def
 --> 2015-03-12 15:54:08     /xyz/456
 `,
 		},
-		cli.Command{
+		{
 			Name:   "set",
 			Usage:  "sets the value of an environment variable on a stack",
 			Action: runEnvVarsSet,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "apply-strategy",
+					Usage: "apply changes immediately, or during next deployment",
+				},
+			},
 			Description: `This sets and applies the value of an environment variable on a stack.
 This work happens in the background, therefore this command will return immediately after the operation has started.
-Warning! Applying environment variable changes to your stack will result in all your stack environment variables
-being sent to your stack servers, and your processes being restarted immediately.
 
+You can use the apply-strategy option to specify "immediately" or "deployment". This will determine how Cloud 66 will apply
+these environment variables to your servers. The default is "immediately" (for backwards compatibility) 
+			
+Warning! Applying environment variable changes "immediately" will result in all your environment variables
+being sent to your servers immediately, and running processes being restarted. NOTE: If you have load balancer, we will
+automatically remove servers from the load balancer before applying changes.
+			
 Examples:
 $ cx env-vars set -s mystack FIRST_VAR=123
 $ cx env-vars set -s mystack SECOND_ONE='this value has a space in it'
+$ cx env-vars set -s mystack --apply-strategy=immediately EXAMPLE1='this will be applied on immediately' 
+$ cx env-vars set -s mystack --apply-strategy=deployment EXAMPLE2='this will be applied on next deployment'
 `,
 		},
 	}
