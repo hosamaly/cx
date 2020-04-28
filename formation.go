@@ -1066,7 +1066,7 @@ func uploadEnvironmentVariables(fb *cloud66.FormationBundle, formation *cloud66.
 		}
 	}
 	for key, value := range envVars {
-		asyncResult, err := client.StackEnvVarNew(stack.Uid, key, value, "immediately")
+		asyncResult, err := client.StackEnvVarNew(stack.Uid, key, value, "")
 		if err != nil {
 			if err.Error() == "Another environment variable with the same key exists. Use PUT to change it." {
 				fmt.Printf("Failed to add the %s environment variable because it already exists\n", key)
