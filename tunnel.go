@@ -64,8 +64,8 @@ For example, if you only specify --remote 5432 without explicitly specifying loc
 
 Examples:
 $ cx tunnel -s mystack --server lion --local 3307 --remote 3306
-$ cx run -s mystack --server 52.65.34.98 --local 3307 --remote 3306
-$ cx run -s mystack --server web -l 3307 -r 3306
+$ cx tunnel -s mystack --server 52.65.34.98 --local 3307 --remote 3306
+$ cx tunnel -s mystack --server web -l 3307 -r 3306
 `,
 }
 
